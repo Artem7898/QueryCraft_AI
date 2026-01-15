@@ -125,5 +125,5 @@
 ### 1. Клонирование репозитория
 ```bash
 
-git clone https://github.com/yourusername/querycraft-ai.git
+git clone https://github.com/Artem7898/querycraft-ai.git
 cd querycraft-ai
