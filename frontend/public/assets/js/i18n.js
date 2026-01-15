@@ -1,0 +1,129 @@
+[file name]: i18n.js
+[file content begin]
+const translations = {
+  ru: {
+    title: "QueryCraft AI",
+    subtitle: "Генерация SQL-запросов на естественном языке",
+    description: "Описание запроса:",
+    inputPlaceholder: "Например: показать всех активных пользователей старше 25 лет...",
+    dbType: "Тип базы данных:",
+    complexity: "Сложность запроса:",
+    generate: "Сгенерировать SQL",
+    copy: "Копировать",
+    copied: "Скопировано!",
+    theme: "Тема",
+    language: "Язык",
+    simple: "Простой (SELECT ... WHERE)",
+    medium: "Средний (JOIN, GROUP BY)",
+    advanced: "Продвинутый (подзапросы, оконные функции)",
+    createQuery: "Создать SQL запрос",
+    generateTitle: "Сгенерировать SQL запрос",
+    selectTheme: "Выберите тему",
+    close: "Закрыть",
+    // Названия тем
+    light: "Светлая",
+    dark: "Темная",
+    "transformative-teal": "Бирюзовая",
+    "verdant-green": "Зеленая",
+    "deep-forest": "Лесная",
+    // Описания тем
+    themeDescriptions: {
+      light: "Светлая тема по умолчанию",
+      dark: "Темная тема для комфортной работы ночью",
+      "transformative-teal": "Бирюзовая тема для концентрации",
+      "verdant-green": "Зеленая тема для расслабления",
+      "deep-forest": "Темно-зеленая тема для длительной работы"
+    }
+  },
+  en: {
+    title: "QueryCraft AI",
+    subtitle: "SQL query generation in natural language",
+    description: "Query description:",
+    inputPlaceholder: "For example: show all active users over 25 years old...",
+    dbType: "Database type:",
+    complexity: "Query complexity:",
+    generate: "Generate SQL",
+    copy: "Copy",
+    copied: "Copied!",
+    theme: "Theme",
+    language: "Language",
+    simple: "Simple (SELECT ... WHERE)",
+    medium: "Medium (JOIN, GROUP BY)",
+    advanced: "Advanced (subqueries, window functions)",
+    createQuery: "Create SQL Query",
+    generateTitle: "Generate SQL Query",
+    selectTheme: "Select theme",
+    close: "Close",
+    // Theme names
+    light: "Light",
+    dark: "Dark",
+    "transformative-teal": "Teal",
+    "verdant-green": "Green",
+    "deep-forest": "Forest",
+    // Theme descriptions
+    themeDescriptions: {
+      light: "Default light theme",
+      dark: "Dark theme for comfortable night work",
+      "transformative-teal": "Teal theme for concentration",
+      "verdant-green": "Green theme for relaxation",
+      "deep-forest": "Dark green theme for long work sessions"
+    }
+  }
+};
+
+// Глобальная переменная для текущего языка
+let currentLang = localStorage.getItem('lang') || 'ru';
+
+// Функция для получения перевода
+function t(key) {
+  return translations[currentLang][key] || key;
+}
+
+// Функция смены языка
+function changeLanguage(lang) {
+  currentLang = lang;
+  localStorage.setItem('lang', lang);
+  document.documentElement.lang = lang;
+
+  // Обновляем весь текст на странице
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.getAttribute('data-i18n');
+    if (el.tagName === 'OPTION') {
+      // Для option элементов проверяем значение
+      if (el.value === 'simple' || el.value === 'medium' || el.value === 'advanced') {
+        el.textContent = t(el.value);
+      }
+    } else {
+      el.textContent = t(key);
+    }
+  });
+
+  // Обновляем placeholder
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+    const key = el.getAttribute('data-i18n-placeholder');
+    el.placeholder = t(key);
+  });
+
+  // Обновляем заголовок страницы
+  document.title = t('title');
+
+  // Обновляем кнопку языка
+  const langBtn = document.getElementById('currentLang');
+  if (langBtn) {
+    langBtn.textContent = lang.toUpperCase();
+  }
+
+  console.log(`Язык изменен на: ${lang}`);
+}
+
+// Инициализация языка при загрузке
+document.addEventListener('DOMContentLoaded', () => {
+  const savedLang = localStorage.getItem('lang') || 'ru';
+  changeLanguage(savedLang);
+});
+
+// Экспортируем функции для использования в других файлах
+window.t = t;
+window.changeLanguage = changeLanguage;
+window.currentLang = currentLang;
+[file content end]

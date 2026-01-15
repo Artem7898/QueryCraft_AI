@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QueryCraft AI - Генератор SQL запросов</title>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+    <!-- Tailwind CSS v3.4 (CDN) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              'sans': ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+              'mono': ['JetBrains Mono', 'monospace'],
+            },
+            animation: {
+              'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+              'float': 'float 6s ease-in-out infinite',
+            },
+            keyframes: {
+              float: {
+                '0%, 100%': { transform: 'translateY(0)' },
+                '50%': { transform: 'translateY(-10px)' },
+              }
+            }
+          }
+        }
+      }
+    </script>
+
+    <!-- Swiper CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/swiper@11/swiper-bundle.min.css"/>
+
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="assets/css/themes.css">
+
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#3b82f6">
+
+    <!-- Favicon -->
+    <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjQiIGhlaWdodD0iNjQiIHZpZXdCb3g9IjAgMCA2NCA2NCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBkPSJNMTYgMThIMzJWNTRIMTZWMThaIiBmaWxsPSJ1cmwoI2dyYWRpZW50MCkiLz48cGF0aCBkPSJNMTMgMjVINzJWMzFIMTNMMTUgMjlaIiBmaWxsPSJ1cmwoI2dyYWRpZW50MSkiLz48cGF0aCBkPSJNMzIgMzlINzJWNTRIMzJMMzQgMzlaIiBmaWxsPSJ1cmwoI2dyYWRpZW50MikiLz48cGF0aCBkPSJNNDggMThMNjIgMTJMMzIgNkwxOCAxMkwzMiAxOEw0OCAxOFoiIGZpbGw9IiMzYjgxZjYiLz48ZGVmcz48bGluZWFyR3JhZGllbnQgaWQ9ImdyYWRpZW50MCIgeDE9IjE2IiB5MT0iMTgiIHgyPSIzMiIgeTI9IjU0IiBncmFkaWVudFVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHN0b3Agb2Zmc2V0PSIwLjEiIHN0b3AtY29sb3I9IiMxZTQwOWQiLz48c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiMzYjgxZjYiLz48L2xpbmVhckdyYWRpZW50PjxsaW5lYXJHcmFkaWVudCBpZD0iZ3JhZGllbnQxIiB4MT0iMTMiIHkxPSIyOSIgeDI9IjcyIiB5Mj0iMzEiIGdyYWRpZW50VW5pdHM9InVzZXJTcGFjZU9uVXNlIj48c3RvcCBvZmZzZXQ9IjAuMSIgc3RvcC1jb2xvcj0iIzFlNDA5ZCIvPjxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iIzNiODFmNiIvPjwvbGluZWFyR3JhZGllbnQ+PGxpbmVhckdyYWRpZW50IGlkPSJncmFkaWVudDIiIHgxPSIzMiIgeTE9IjM5IiB4Mj0iNzIiIHkyPSI1NCIgZ3JhZGllbnRVbml0cz0idXNlclNwYWNlT25Vc2UiPjxzdG9wIG9mZnNldD0iMC4xIiBzdG9wLWNvbG9yPSIjMWU0MDlkIi8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjM2I4MWY2Ii8+PC9saW5lYXJHcmFkaWVudD48L2RlZnM+PC9zdmc+" type="image/svg+xml">
+
+    <!-- iOS meta tags -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+</head>
+<body class="min-h-screen bg-[var(--color-bg)] text-[var(--color-text)] transition-colors duration-300 font-sans">
+
+<!-- Header -->
+<header class="container mx-auto px-4 py-6 flex justify-between items-center">
+    <div class="flex items-center space-x-3">
+        <div class="relative">
+            <svg width="48" height="48" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-12 h-12 animate-float">
+                <path d="M16 18H32V54H16V18Z" fill="url(#gradient0)"/>
+                <path d="M13 25H72V31H13L15 29Z" fill="url(#gradient1)"/>
+                <path d="M32 39H72V54H32L34 39Z" fill="url(#gradient2)"/>
+                <path d="M48 18L62 12L32 6L18 12L32 18L48 18Z" fill="#3b82f6"/>
+                <defs>
+                    <linearGradient id="gradient0" x1="16" y1="18" x2="32" y2="54" gradientUnits="userSpaceOnUse">
+                        <stop offset="0.1" stop-color="#1e409d"/>
+                        <stop offset="1" stop-color="#3b82f6"/>
+                    </linearGradient>
+                    <linearGradient id="gradient1" x1="13" y1="29" x2="72" y2="31" gradientUnits="userSpaceOnUse">
+                        <stop offset="0.1" stop-color="#1e409d"/>
+                        <stop offset="1" stop-color="#3b82f6"/>
+                    </linearGradient>
+                    <linearGradient id="gradient2" x1="32" y1="39" x2="72" y2="54" gradientUnits="userSpaceOnUse">
+                        <stop offset="0.1" stop-color="#1e409d"/>
+                        <stop offset="1" stop-color="#3b82f6"/>
+                    </linearGradient>
+                </defs>
+            </svg>
+            <div class="absolute -inset-1 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full blur opacity-20"></div>
+        </div>
+        <div>
+            <h1 class="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent" data-i18n="title">QueryCraft AI</h1>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Генератор SQL на основе ИИ</p>
+        </div>
+    </div>
+
+    <div class="flex items-center space-x-4">
+        <!-- Language Button -->
+         <button id="langBtn"
+                class="px-4 py-2 rounded-lg border-2 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all duration-200 flex items-center space-x-2 group"
+                style="border-color: var(--color-border);">
+            <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129"></path>
+            </svg>
+            <span data-i18n="language">Язык</span>
+            <span id="currentLang" class="font-semibold">RU</span>
+        </button>
+
+        <!-- Theme Button -->
+        <button id="themeBtn"
+                class="px-4 py-2 rounded-lg border-2 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all duration-200 flex items-center space-x-2"
+                style="border-color: var(--color-border);">
+            <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path>
+            </svg>
+            <span data-i18n="theme">Тема</span>
+        </button>
+    </div>
+</header>
+
+<!-- Main Content -->
+<main class="container mx-auto px-4 py-8 max-w-4xl">
+    <!-- Hero Section -->
+    <div class="text-center mb-12">
+        <h2 class="text-3xl font-bold mb-4 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent" data-i18n="subtitle">
+            Генерация SQL-запросов на естественном языке
+        </h2>
+        <p class="text-gray-600 dark:text-gray-400 text-lg max-w-2xl mx-auto mb-8">
+            Опишите, что вам нужно, простыми словами, а наш ИИ превратит это в готовый SQL-запрос
+        </p>
+
+        <!-- Stats -->
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div class="p-4 rounded-xl bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 border border-blue-200 dark:border-blue-700">
+                <div class="text-3xl font-bold text-blue-600 dark:text-blue-400 mb-2">100+</div>
+                <div class="text-sm text-gray-600 dark:text-gray-400">Шаблонов запросов</div>
+            </div>
+            <div class="p-4 rounded-xl bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20 border border-purple-200 dark:border-purple-700">
+                <div class="text-3xl font-bold text-purple-600 dark:text-purple-400 mb-2">4</div>
+                <div class="text-sm text-gray-600 dark:text-gray-400">Типа БД</div>
+            </div>
+            <div class="p-4 rounded-xl bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20 border border-green-200 dark:border-green-700">
+                <div class="text-3xl font-bold text-green-600 dark:text-green-400 mb-2">RU/EN</div>
+                <div class="text-sm text-gray-600 dark:text-gray-400">Поддержка языков</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Open Modal Button -->
+    <div class="text-center mb-12">
+        <button id="openModal"
+                class="px-10 py-5 rounded-2xl font-semibold text-lg transition-all duration-300 hover:scale-105 hover:shadow-2xl active:scale-95 group relative overflow-hidden"
+                style="background: var(--color-primary); color: white;">
+            <span class="relative z-10 flex items-center justify-center space-x-3">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <span data-i18n="createQuery">Создать SQL запрос</span>
+            </span>
+            <div class="absolute inset-0 bg-gradient-to-r from-blue-600 to-purple-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+        </button>
+        <p class="text-gray-500 dark:text-gray-400 text-sm mt-3">Нажмите, чтобы начать генерацию SQL запросов</p>
+    </div>
+
+    <!-- Примеры запросов -->
+    <div class="mt-12 mb-12">
+        <h3 class="text-center text-2xl font-bold mb-8">Примеры запросов</h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6" id="examplesContainer">
+            <!-- Пример 1 -->
+            <div class="p-6 rounded-2xl bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800/30 dark:to-gray-900/30 border border-gray-200 dark:border-gray-700 hover:shadow-lg transition-shadow duration-300">
+                <h4 class="text-lg font-semibold mb-3">Выбор пользователей</h4>
+                <p class="text-gray-600 dark:text-gray-400 text-sm mb-4">Выбрать всех пользователей старше 25 лет со статусом "активен"</p>
+                <button class="use-example-btn px-4 py-2 rounded-lg text-sm font-medium transition-all hover:scale-105"
+                        style="background: var(--color-primary); color: white;">
+                    Нажмите для использования
+                </button>
+            </div>
+
+            <!-- Пример 2 -->
+            <div class="p-6 rounded-2xl bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800/30 dark:to-gray-900/30 border border-gray-200 dark:border-gray-700 hover:shadow-lg transition-shadow duration-300">
+                <h4 class="text-lg font-semibold mb-3">Поиск товаров</h4>
+                <p class="text-gray-600 dark:text-gray-400 text-sm mb-4">Найти товары в определенной категории</p>
+                <button class="use-example-btn px-4 py-2 rounded-lg text-sm font-medium transition-all hover:scale-105"
+                        style="background: var(--color-primary); color: white;">
+                    Нажмите для использования
+                </button>
+            </div>
+
+            <!-- Пример 3 -->
+            <div class="p-6 rounded-2xl bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800/30 dark:to-gray-900/30 border border-gray-200 dark:border-gray-700 hover:shadow-lg transition-shadow duration-300">
+                <h4 class="text-lg font-semibold mb-3">Статистика продаж</h4>
+                <p class="text-gray-600 dark:text-gray-400 text-sm mb-4">Подсчитать общую сумму заказов по месяцам</p>
+                <button class="use-example-btn px-4 py-2 rounded-lg text-sm font-medium transition-all hover:scale-105"
+                        style="background: var(--color-primary); color: white;">
+                    Нажмите для использования
+                </button>
+            </div>
+
+            <!-- Пример 4 -->
+            <div class="p-6 rounded-2xl bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800/30 dark:to-gray-900/30 border border-gray-200 dark:border-gray-700 hover:shadow-lg transition-shadow duration-300">
+                <h4 class="text-lg font-semibold mb-3">Анализ пользователей</h4>
+                <p class="text-gray-600 dark:text-gray-400 text-sm mb-4">Показать топ-10 самых активных пользователей</p>
+                <button class="use-example-btn px-4 py-2 rounded-lg text-sm font-medium transition-all hover:scale-105"
+                        style="background: var(--color-primary); color: white;">
+                    Нажмите для использования
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Features -->
+    <div class="mt-12 mb-12 grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div class="p-6 rounded-2xl bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800/30 dark:to-gray-900/30 border border-gray-200 dark:border-gray-700">
+            <div class="flex items-center mb-4">
+                <div class="p-3 rounded-lg bg-blue-100 dark:bg-blue-900/30 mr-4">
+                    <svg class="w-6 h-6 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
+                    </svg>
+                </div>
+                <h4 class="text-xl font-semibold">Безопасность</h4>
+            </div>
+            <p class="text-gray-600 dark:text-gray-400">Все запросы генерируются локально или через защищённые API. Ваши данные в безопасности.</p>
+        </div>
+
+        <div class="p-6 rounded-2xl bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800/30 dark:to-gray-900/30 border border-gray-200 dark:border-gray-700">
+            <div class="flex items-center mb-4">
+                <div class="p-3 rounded-lg bg-purple-100 dark:bg-purple-900/30 mr-4">
+                    <svg class="w-6 h-6 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                    </svg>
+                </div>
+                <h4 class="text-xl font-semibold">Скорость</h4>
+            </div>
+            <p class="text-gray-600 dark:text-gray-400">Мгновенная генерация SQL запросов с использованием передовых AI моделей.</p>
+        </div>
+    </div>
+
+    <!-- Modal -->
+    <div id="queryModal"
+         class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 opacity-0 pointer-events-none transition-all duration-300 hidden">
+        <div class="w-full max-w-2xl mx-4 p-8 rounded-2xl shadow-2xl bg-[var(--color-bg)] border border-[var(--color-border)] transform transition-all duration-300 scale-95">
+            <div class="flex justify-between items-center mb-8">
+                <h3 class="text-xl font-bold flex items-center space-x-3">
+                    <svg class="w-6 h-6 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                    </svg>
+                    <span data-i18n="generate">Сгенерировать SQL запрос</span>
+                </h3>
+                <button id="closeModal" class="text-2xl hover:text-[var(--color-primary)] transition-colors p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800">
+                    &times;
+                </button>
+            </div>
+
+            <form id="queryForm" class="space-y-8">
+                <div>
+                    <label for="queryInput" class="block text-sm font-medium mb-3 flex items-center justify-between">
+                        <span data-i18n="description">Описание запроса:</span>
+                        <span id="charCount" class="text-xs text-gray-500">0 символов</span>
+                    </label>
+                    <textarea id="queryInput"
+                              class="w-full p-5 rounded-xl border-2 min-h-48 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-mono text-sm"
+                              style="border-color: var(--color-border); background: var(--color-bg); color: var(--color-text);"
+                              placeholder="Например: показать всех активных пользователей старше 25 лет, отсортированных по дате регистрации"
+                              data-i18n-placeholder="inputPlaceholder"></textarea>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label for="dbType" class="block text-sm font-medium mb-3 flex items-center">
+                            <svg class="w-4 h-4 mr-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"></path>
+                            </svg>
+                            <span data-i18n="dbType">Тип базы данных:</span>
+                        </label>
+                        <select id="dbType"
+                                class="w-full p-4 rounded-xl border-2 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all appearance-none bg-[var(--color-bg)]"
+                                style="border-color: var(--color-border); color: var(--color-text);">
+                            <option value="postgresql">PostgreSQL</option>
+                            <option value="mysql">MySQL</option>
+                            <option value="sqlite">SQLite</option>
+                            <option value="mongodb">MongoDB</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label for="complexity" class="block text-sm font-medium mb-3 flex items-center">
+                            <svg class="w-4 h-4 mr-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path>
+                            </svg>
+                            <span data-i18n="complexity">Сложность запроса:</span>
+                        </label>
+                        <select id="complexity"
+                                class="w-full p-4 rounded-xl border-2 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all appearance-none bg-[var(--color-bg)]"
+                                style="border-color: var(--color-border); color: var(--color-text);">
+                            <option value="simple" data-i18n="simple">Простой (SELECT ... WHERE)</option>
+                            <option value="medium" data-i18n="medium">Средний (JOIN, GROUP BY)</option>
+                            <option value="advanced" data-i18n="advanced">Продвинутый (подзапросы, оконные функции)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <button type="submit"
+                        class="w-full py-4 rounded-xl font-semibold text-lg transition-all duration-300 hover:scale-[1.02] active:scale-95 group relative overflow-hidden"
+                        style="background: var(--color-primary); color: white;">
+                    <span class="relative z-10 flex items-center justify-center space-x-3">
+                        <svg class="w-5 h-5 animate-spin hidden" id="submitSpinner" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                        </svg>
+                        <span data-i18n="generate">Сгенерировать SQL</span>
+                    </span>
+                    <div class="absolute inset-0 bg-gradient-to-r from-blue-600 to-purple-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                </button>
+            </form>
+
+            <!-- Result -->
+            <div id="result" class="mt-8 hidden">
+                <div class="flex justify-between items-center mb-4">
+                    <h4 class="font-bold text-sm flex items-center">
+                        <svg class="w-4 h-4 mr-2 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        Сгенерированный SQL:
+                    </h4>
+                    <button id="copyBtn"
+                            class="px-4 py-2 rounded-lg text-sm font-medium transition-all hover:scale-105 flex items-center space-x-2"
+                            style="background: var(--color-secondary); color: white;">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                        </svg>
+                        <span data-i18n="copy">Копировать</span>
+                    </button>
+                </div>
+                <div class="relative">
+                    <pre id="queryOutput"
+                         class="p-5 rounded-xl overflow-x-auto font-mono text-sm bg-gray-900 text-gray-100 leading-relaxed whitespace-pre-wrap"
+                         style="min-height: 120px;"></pre>
+                    <div class="absolute top-3 right-3 flex space-x-2">
+                        <button class="p-2 rounded bg-gray-800 hover:bg-gray-700 transition-colors" title="Скопировать весь код">
+                            <svg class="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="mt-4 space-y-2">
+                    <p id="explanation" class="text-sm text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800/50 p-3 rounded-lg"></p>
+                    <p id="executionTime" class="text-xs text-gray-500 dark:text-gray-400 font-mono"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Carousel -->
+    <div class="mt-12 mb-12">
+        <h3 class="text-center text-2xl font-bold mb-8">Рекомендуемые сервисы</h3>
+        <div class="swiper">
+            <div class="swiper-wrapper">
+                <div class="swiper-slide">
+                    <div class="p-8 rounded-2xl bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 border border-blue-200 dark:border-blue-700 hover:shadow-xl transition-shadow duration-300">
+                        <div class="h-40 flex flex-col items-center justify-center text-center">
+                            <div class="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mb-4">
+                                <svg class="w-6 h-6 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"></path>
+                                </svg>
+                            </div>
+                            <span class="text-lg font-semibold mb-2">Облачная БД PostgreSQL</span>
+                            <span class="text-sm text-gray-600 dark:text-gray-400">Высокая доступность и производительность</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="swiper-slide">
+                    <div class="p-8 rounded-2xl bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20 border border-green-200 dark:border-green-700 hover:shadow-xl transition-shadow duration-300">
+                        <div class="h-40 flex flex-col items-center justify-center text-center">
+                            <div class="w-12 h-12 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mb-4">
+                                <svg class="w-6 h-6 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
+                                </svg>
+                            </div>
+                            <span class="text-lg font-semibold mb-2">Курсы SQL</span>
+                            <span class="text-sm text-gray-600 dark:text-gray-400">Изучите SQL с нуля до продвинутого уровня</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="swiper-slide">
+                    <div class="p-8 rounded-2xl bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20 border border-purple-200 dark:border-purple-700 hover:shadow-xl transition-shadow duration-300">
+                        <div class="h-40 flex flex-col items-center justify-center text-center">
+                            <div class="w-12 h-12 bg-purple-100 dark:bg-purple-900/30 rounded-full flex items-center justify-center mb-4">
+                                <svg class="w-6 h-6 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
+                                </svg>
+                            </div>
+                            <span class="text-lg font-semibold mb-2">AI Аналитика</span>
+                            <span class="text-sm text-gray-600 dark:text-gray-400">Автоматический анализ данных и отчёты</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="swiper-pagination mt-6"></div>
+        </div>
+    </div>
+
+    <!-- CTA Section -->
+    <div class="text-center p-8 rounded-2xl bg-gradient-to-r from-blue-500/10 to-purple-500/10 border border-blue-200/50 dark:border-blue-700/50 mb-12">
+        <h3 class="text-2xl font-bold mb-4">Начните генерировать SQL прямо сейчас</h3>
+        <p class="text-gray-600 dark:text-gray-400 mb-6">Более 1000 разработчиков уже используют QueryCraft AI</p>
+        <button id="openModal2"
+                class="px-8 py-3 rounded-xl font-semibold transition-all hover:scale-105 hover:shadow-lg active:scale-95"
+                style="background: var(--color-primary); color: white;">
+            Начать бесплатно
+        </button>
+    </div>
+</main>
+
+<!-- Footer -->
+<footer class="container mx-auto px-4 py-12 mt-12 border-t" style="border-color: var(--color-border);">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
+        <div>
+            <div class="flex items-center space-x-3 mb-4">
+                <svg width="40" height="40" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-10 h-10">
+                    <path d="M16 18H32V54H16V18Z" fill="url(#gradient0)"/>
+                    <path d="M13 25H72V31H13L15 29Z" fill="url(#gradient1)"/>
+                    <path d="M32 39H72V54H32L34 39Z" fill="url(#gradient2)"/>
+                    <path d="M48 18L62 12L32 6L18 12L32 18L48 18Z" fill="#3b82f6"/>
+                    <defs>
+                        <linearGradient id="gradient0" x1="16" y1="18" x2="32" y2="54" gradientUnits="userSpaceOnUse">
+                            <stop offset="0.1" stop-color="#1e409d"/>
+                            <stop offset="1" stop-color="#3b82f6"/>
+                        </linearGradient>
+                        <linearGradient id="gradient1" x1="13" y1="29" x2="72" y2="31" gradientUnits="userSpaceOnUse">
+                            <stop offset="0.1" stop-color="#1e409d"/>
+                            <stop offset="1" stop-color="#3b82f6"/>
+                        </linearGradient>
+                        <linearGradient id="gradient2" x1="32" y1="39" x2="72" y2="54" gradientUnits="userSpaceOnUse">
+                            <stop offset="0.1" stop-color="#1e409d"/>
+                            <stop offset="1" stop-color="#3b82f6"/>
+                        </linearGradient>
+                    </defs>
+                </svg>
+                <span class="text-xl font-bold">QueryCraft AI</span>
+            </div>
+            <p class="text-gray-600 dark:text-gray-400 text-sm">
+                Современный инструмент для генерации SQL запросов с использованием искусственного интеллекта.
+            </p>
+        </div>
+        <div>
+            <h4 class="font-semibold mb-4">Возможности</h4>
+            <ul class="space-y-2 text-sm text-gray-600 dark:text-gray-400">
+                <li>Генерация SQL из текста</li>
+                <li>Поддержка 4 типов БД</li>
+                <li>Подсветка синтаксиса</li>
+                <li>Экспорт запросов</li>
+            </ul>
+        </div>
+        <div>
+            <h4 class="font-semibold mb-4">Контакты</h4>
+            <ul class="space-y-2 text-sm text-gray-600 dark:text-gray-400">
+                <li>support@querycraft.ai</li>
+                <li>Telegram: @querycraft_support</li>
+                <li>GitHub: querycraft-ai</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="text-center text-gray-600 dark:text-gray-400 pt-8 border-t" style="border-color: var(--color-border);">
+        <p class="text-sm">© 2026 QueryCraft AI. Все права защищены.</p>
+        <p class="text-xs mt-2">ИИ-генерация SQL-запросов для разработчиков и аналитиков</p>
+    </div>
+</footer>
+
+<!-- External JS -->
+<script src="https://unpkg.com/swiper@11/swiper-bundle.min.js"></script>
+
+<!-- Our JS -->
+<script src="assets/js/i18n.js"></script>
+<script src="assets/js/main.js"></script>
+<script src="sw-register.js"></script>
+<script src="assets/js/theme-switcher.js"></script>
+<script src="assets/js/app-state.js"></script>
+
+<!-- Additional JS for better UX -->
+<script>
+    // Этот скрипт не должен конфликтовать с i18n.js
+    document.addEventListener('DOMContentLoaded', function() {
+        // Добавляем второй обработчик для кнопки CTA
+        const openModal2 = document.getElementById('openModal2');
+        if (openModal2) {
+            openModal2.addEventListener('click', function() {
+                document.getElementById('openModal').click();
+            });
+        }
+
+        // Обработчики для кнопок примеров запросов
+        document.querySelectorAll('.use-example-btn').forEach(button => {
+            button.addEventListener('click', function() {
+                const description = this.parentElement.querySelector('p').textContent;
+                const queryInput = document.getElementById('queryInput');
+                if (queryInput) {
+                    queryInput.value = description;
+                    // Обновляем счетчик символов
+                    const charCount = document.getElementById('charCount');
+                    if (charCount) {
+                        charCount.textContent = `${queryInput.value.length} символов`;
+                    }
+                    // Открываем модальное окно
+                    document.getElementById('openModal').click();
+                }
+            });
+        });
+
+        // Инициализация Swiper
+        if (typeof Swiper !== 'undefined') {
+            new Swiper('.swiper', {
+                slidesPerView: 1,
+                spaceBetween: 20,
+                pagination: {
+                    el: '.swiper-pagination',
+                    clickable: true,
+                },
+                breakpoints: {
+                    640: {
+                        slidesPerView: 2,
+                    },
+                    1024: {
+                        slidesPerView: 3,
+                    }
+                }
+            });
+        }
+    });
+</script>
+</body>
+</html>

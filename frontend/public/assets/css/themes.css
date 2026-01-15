@@ -1,0 +1,122 @@
+/* CSS Custom Properties для 5 тем */
+:root {
+  --color-bg: #ffffff;
+  --color-text: #1f2937;
+  --color-primary: #3b82f6;
+  --color-secondary: #8b5cf6;
+  --color-border: #e5e7eb;
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
+}
+
+[data-theme="dark"] {
+  --color-bg: #111827;
+  --color-text: #f3f4f6;
+  --color-primary: #60a5fa;
+  --color-secondary: #a78bfa;
+  --color-border: #374151;
+  --color-success: #34d399;
+  --color-warning: #fbbf24;
+  --color-error: #f87171;
+}
+
+[data-theme="transformative-teal"] {
+  --color-bg: #134e4a;
+  --color-text: #ccfbf1;
+  --color-primary: #14b8a6;
+  --color-secondary: #06b6d4;
+  --color-border: #115e59;
+  --color-success: #2dd4bf;
+  --color-warning: #fde68a;
+  --color-error: #fca5a5;
+}
+
+[data-theme="verdant-green"] {
+  --color-bg: #14532d;
+  --color-text: #dcfce7;
+  --color-primary: #22c55e;
+  --color-secondary: #84cc16;
+  --color-border: #166534;
+  --color-success: #4ade80;
+  --color-warning: #facc15;
+  --color-error: #f87171;
+}
+
+[data-theme="deep-forest"] {
+  --color-bg: #1e293b;
+  --color-text: #f0fdf4;
+  --color-primary: #10b981;
+  --color-secondary: #34d399;
+  --color-border: #334155;
+  --color-success: #10b981;
+  --color-warning: #fbbf24;
+  --color-error: #ef4444;
+}
+
+/* Применение темы */
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Стили для селектора тем */
+.theme-selector-modal {
+  animation: fadeIn 0.3s ease-out;
+}
+
+.theme-option {
+  transition: all 0.2s ease;
+}
+
+.theme-option:hover {
+  transform: translateY(-2px);
+}
+
+.theme-option.selected {
+  border-color: var(--color-primary) !important;
+  box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb, 59, 130, 246), 0.1);
+}
+
+/* Анимации */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+/* Стили для кода SQL */
+.sql-keyword {
+  color: var(--color-primary);
+  font-weight: bold;
+}
+
+.sql-string {
+  color: var(--color-success);
+}
+
+.sql-comment {
+  color: var(--color-border);
+  font-style: italic;
+}
+
+.sql-number {
+  color: var(--color-secondary);
+}
+
+/* Адаптивность */
+@media (max-width: 640px) {
+  .theme-selector-modal {
+    margin: 1rem;
+    padding: 1rem;
+  }
+}
