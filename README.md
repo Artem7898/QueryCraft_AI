@@ -1,23 +1,25 @@
 # QueryCraft AI
 
-QueryCraft AI превращает описание на русском или английском в черновик запроса для PostgreSQL, MySQL, SQLite или MongoDB. API возвращает текст запроса, пояснение и метаданные генерации. Приложение не подключается к СУБД и не выполняет запросы. Перед использованием сверьте результат со схемой данных и требованиями задачи.
+**English** · [Русский](README_RU.md)
 
-## Архитектура
+QueryCraft AI turns natural-language descriptions in English or Russian into draft queries for PostgreSQL, MySQL, SQLite, and MongoDB. The API returns the query text, an explanation, and generation metadata. It does not connect to a database or execute queries. Review each draft against your schema and requirements before using it.
+
+## Architecture
 
 ```mermaid
 flowchart LR
-    UI["Статический веб-интерфейс"] --> API["FastAPI · POST /api/v1/generate"]
-    API -->|"Демо-режим"| Demo["Локальные примеры"]
-    API -->|"Ключ Bytez задан"| Bytez["Bytez · HTTPX"]
+    UI["Static web interface"] --> API["FastAPI · POST /api/v1/generate"]
+    API -->|"Demo mode"| Demo["Local examples"]
+    API -->|"Bytez API key configured"| Bytez["Bytez · HTTPX"]
 ```
 
-- **API** проверяет входные данные через Pydantic v2, ограничивает размер и частоту запросов. Асинхронный клиент HTTPX и пул соединений живут в пределах одного процесса FastAPI.
-- **Генерация** использует Bytez и модель `Qwen/Qwen2-7B-Instruct` по умолчанию. Без ключа API возвращает заранее подготовленные примеры для выбранного диалекта.
-- **Веб-интерфейс** работает на HTML, CSS и JavaScript без этапа сборки. Подсветка отображает ответ провайдера как текст в DOM.
+- **API** validates requests with Pydantic v2 and enforces request size and rate limits. Each FastAPI worker owns an asynchronous HTTPX client and connection pool.
+- **Generation** uses Bytez with `Qwen/Qwen2-7B-Instruct` as the default model. Demo mode returns predefined examples for the selected database dialect.
+- **Web interface** uses HTML, CSS, and JavaScript and runs without a build step. Syntax highlighting renders provider output as text in the DOM.
 
-## Локальный запуск
+## Run locally
 
-Требуется Python 3.12 или 3.13. Node.js и npm нужны для проверок фронтенда. Команды ниже рассчитаны на Bash.
+Use Python 3.12 or 3.13. Node.js and npm are required for frontend checks. Run the following Bash commands from the repository root.
 
 ```bash
 python3 -m venv .venv
@@ -25,33 +27,33 @@ source .venv/bin/activate
 python -m pip install -r backend/requirements-dev.txt
 ```
 
-Запустите API из каталога `backend/`. Команда явно включает демо-режим, поэтому ключ Bytez не требуется.
+Start the API from `backend/`. This command explicitly enables demo mode and requires no Bytez key.
 
 ```bash
 cd backend
 BYTEZ_API_KEY=your_api_key_here python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-Во втором терминале из корня репозитория запустите статический сервер.
+In a second terminal, start the static server from the repository root.
 
 ```bash
 python3 -m http.server --bind 127.0.0.1 --directory frontend/public 3000
 ```
 
-Откройте страницу на `http://localhost:3000`. Браузер обращается к API на `http://localhost:8000/api/v1`. Для полной отрисовки стилей, шрифтов и карусели странице нужен доступ к CDN Tailwind, Swiper и Google Fonts.
+Open `http://localhost:3000`. The browser sends requests to `http://localhost:8000/api/v1`. The page loads Tailwind styles, Swiper, and Google Fonts from external CDNs.
 
 ## HTTP API
 
-| Маршрут | Назначение |
+| Route | Purpose |
 | --- | --- |
-| `POST /api/v1/generate` | Генерация черновика запроса |
-| `GET /health` | Проверка доступности API |
-| `GET /api/v1/health` | Состояние API и имя модели. Маршрут работает без запроса к Bytez |
+| `POST /api/v1/generate` | Generate a draft query |
+| `GET /health` | Check API availability |
+| `GET /api/v1/health` | Report API status and the configured model without contacting Bytez |
 | `GET /api/docs` | Swagger UI |
 | `GET /api/redoc` | ReDoc |
-| `GET /openapi.json` | Схема OpenAPI |
+| `GET /openapi.json` | OpenAPI schema |
 
-### Запрос генерации
+### Generate a query
 
 ```bash
 curl --fail-with-body --silent --show-error http://127.0.0.1:8000/api/v1/generate \
@@ -59,14 +61,14 @@ curl --fail-with-body --silent --show-error http://127.0.0.1:8000/api/v1/generat
   --data '{"text":"Show active users older than 25","db_type":"postgresql","complexity":"simple","language":"en"}'
 ```
 
-| Поле | Допустимые значения | По умолчанию |
+| Field | Accepted values | Default |
 | --- | --- | --- |
-| `text` | Строка из 3–1000 символов после удаления пробелов по краям | Обязательное поле |
+| `text` | String of 3–1000 characters after trimming leading and trailing whitespace | Required |
 | `db_type` | `postgresql`, `mysql`, `sqlite`, `mongodb` | `postgresql` |
 | `complexity` | `simple`, `medium`, `advanced` | `medium` |
 | `language` | `ru`, `en` | `ru` |
 
-Пример ответа в демо-режиме:
+Example response in demo mode.
 
 ```json
 {
@@ -78,40 +80,40 @@ curl --fail-with-body --silent --show-error http://127.0.0.1:8000/api/v1/generat
 }
 ```
 
-`executed_in` измеряется в секундах. В демо-режиме `tokens_used` содержит условное значение.
+`executed_in` is measured in seconds. In demo mode, `tokens_used` is a placeholder value and the model name includes the suffix `(тестовый режим)`, meaning “demo mode.”
 
-| Статус | Причина |
+| Status | Meaning |
 | --- | --- |
-| `413` | Тело запроса превышает 16 КиБ |
-| `422` | Некорректный JSON или ошибка валидации полей |
-| `429` | Исчерпан лимит генерации. Время ожидания указано в `Retry-After` |
-| `502` | Ошибка провайдера или неожиданный формат ответа |
-| `504` | Истёк тайм-аут обращения к провайдеру |
+| `413` | Request body exceeds 16 KiB |
+| `422` | Invalid JSON or request fields |
+| `429` | Generation rate limit reached. See the `Retry-After` header |
+| `502` | Provider failure or unexpected response format |
+| `504` | Provider request timed out |
 
-## Конфигурация
+## Configuration
 
-Приложение читает переменные окружения и файл `.env` из рабочей директории процесса. При запуске из `backend/` используйте `backend/.env`. Переменные окружения имеют приоритет.
+The application reads environment variables and a `.env` file in the server’s working directory. Use `backend/.env` when starting the server from `backend/`. Environment variables take precedence.
 
-| Переменная | По умолчанию | Назначение |
+| Variable | Default | Purpose |
 | --- | --- | --- |
-| `BYTEZ_API_KEY` | Не задана | Ключ для генерации через Bytez. Пустое значение или `your_api_key_here` включает демо-режим |
-| `BYTEZ_API_URL` | `https://api.bytez.com/models/v2/openai/v1` | Базовый HTTPS-адрес провайдера |
-| `MODEL_NAME` | `Qwen/Qwen2-7B-Instruct` | Идентификатор модели |
-| `API_TIMEOUT` | `30` | Общий тайм-аут обращения к Bytez в секундах, диапазон 5–120 |
-| `ALLOWED_ORIGINS` | Локальные источники на портах 3000 и 8000 | Разрешённые источники CORS в формате JSON-массива или списка через запятую |
-| `MAX_QUERY_LENGTH` | `1000` | Максимальная длина описания, диапазон 3–1000 |
-| `MAX_REQUESTS_PER_MINUTE` | `60` | Общий лимит запросов генерации в минуту на процесс |
-| `ENVIRONMENT` | `development` | При значении `production` требуется ключ Bytez и `DEBUG=false` |
-| `DEBUG` | `false` | Флаг конфигурации для разработки |
-| `APP_NAME` | `QueryCraft AI` | Имя приложения в заголовке документации API |
+| `BYTEZ_API_KEY` | Unset | API key for live generation. An empty value or `your_api_key_here` enables demo mode |
+| `BYTEZ_API_URL` | `https://api.bytez.com/models/v2/openai/v1` | Provider HTTPS base URL |
+| `MODEL_NAME` | `Qwen/Qwen2-7B-Instruct` | Provider model identifier |
+| `API_TIMEOUT` | `30` | Total Bytez request timeout in seconds, from 5 to 120 |
+| `ALLOWED_ORIGINS` | Local origins on ports 3000 and 8000 | Allowed CORS origins as a JSON array or comma-separated list |
+| `MAX_QUERY_LENGTH` | `1000` | Maximum description length, from 3 to 1000 characters |
+| `MAX_REQUESTS_PER_MINUTE` | `60` | Shared generation request limit per minute, per worker |
+| `ENVIRONMENT` | `development` | The `production` setting requires a Bytez key and `DEBUG=false` |
+| `DEBUG` | `false` | Development configuration flag |
+| `APP_NAME` | `QueryCraft AI` | Application name shown in the API documentation title |
 
-Для генерации через Bytez задайте ключ в окружении или в локальном `.env` и уберите `BYTEZ_API_KEY=your_api_key_here` из команды запуска. В этом режиме описания запросов отправляются в Bytez. Храните ключ вне Git.
+To enable live generation, configure your Bytez key in the environment or in your local `.env` file and remove `BYTEZ_API_KEY=your_api_key_here` from the startup command. Live mode sends query descriptions to Bytez. Keep the API key out of version control.
 
-Веб-интерфейс настроен на локальный API. При сетевом развёртывании укажите доступный браузеру адрес в `API_BASE_URL` и разрешите соответствующий источник через `ALLOWED_ORIGINS`. При нескольких воркерах применяйте общий лимит и контроль доступа на шлюзе. [Настройка адреса API](frontend/public/assets/js/main.js)
+For a hosted deployment, set `API_BASE_URL` to an API address reachable by the browser and include the frontend origin in `ALLOWED_ORIGINS`. If you run multiple workers, enforce a shared rate limit and access control at the gateway. [Frontend API configuration](frontend/public/assets/js/main.js)
 
-## Проверки
+## Development checks
 
-Из корня репозитория в активированном Python-окружении:
+Run the backend checks from the repository root with the virtual environment activated.
 
 ```bash
 python -m pytest -q
@@ -120,9 +122,9 @@ ruff format --check backend
 mypy
 ```
 
-При запущенном API в демо-режиме команда `python backend/cors_test.py` проверяет CORS и генерацию по HTTP. Тесты обращений к Bytez используют подставной HTTP-транспорт и выполняются без реального ключа.
+With the API running in demo mode, run `python backend/cors_test.py` to verify CORS and generation over HTTP. The provider tests use a mock HTTP transport and require no Bytez key.
 
-Проверки фронтенда:
+Run the frontend checks from the repository root.
 
 ```bash
 cd frontend
@@ -131,15 +133,19 @@ npm run lint
 npm test -- --runInBand
 ```
 
-## Структура репозитория
+## Repository structure
 
-| Путь | Назначение |
+| Path | Purpose |
 | --- | --- |
-| [`backend/app/main.py`](backend/app/main.py) | Фабрика FastAPI и жизненный цикл приложения |
-| [`backend/app/api/v1/endpoints/query.py`](backend/app/api/v1/endpoints/query.py) | Генерация, диагностика и ограничения входящих запросов |
-| [`backend/app/config.py`](backend/app/config.py) | Настройки и их валидация |
-| [`backend/app/models/schemas.py`](backend/app/models/schemas.py) | Схемы запросов и ответов |
-| [`backend/app/services/ai_service.py`](backend/app/services/ai_service.py) | Интеграция с Bytez и локальные примеры |
-| [`backend/tests/`](backend/tests/) | Тесты API, конфигурации и провайдера |
-| [`frontend/public/`](frontend/public/) | Статические ресурсы |
-| [`frontend/tests/`](frontend/tests/) | Тесты браузерного JavaScript |
+| [`backend/app/main.py`](backend/app/main.py) | FastAPI application factory and lifecycle |
+| [`backend/app/api/v1/endpoints/query.py`](backend/app/api/v1/endpoints/query.py) | Generation endpoints, health checks, and request limits |
+| [`backend/app/config.py`](backend/app/config.py) | Application settings and validation |
+| [`backend/app/models/schemas.py`](backend/app/models/schemas.py) | Request and response schemas |
+| [`backend/app/services/ai_service.py`](backend/app/services/ai_service.py) | Bytez integration and demo examples |
+| [`backend/tests/`](backend/tests/) | API, configuration, and provider tests |
+| [`frontend/public/`](frontend/public/) | Static web assets |
+| [`frontend/tests/`](frontend/tests/) | Browser JavaScript tests |
+
+## Developer
+
+Developed by [Artem7898](https://github.com/Artem7898).
