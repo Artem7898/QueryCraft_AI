@@ -26,6 +26,8 @@ document.addEventListener('DOMContentLoaded', function() {
   const modal = document.getElementById('queryModal');
   const openBtn = document.getElementById('openModal');
   const closeBtn = document.getElementById('closeModal');
+  const resultSection = document.getElementById('result');
+  const generationUnavailable = document.getElementById('generationUnavailable');
 
   // Открытие модального окна
   openBtn.addEventListener('click', function() {
@@ -41,7 +43,8 @@ document.addEventListener('DOMContentLoaded', function() {
     modal.classList.add('opacity-0', 'pointer-events-none');
     setTimeout(() => {
       modal.classList.add('hidden');
-      document.getElementById('result').classList.add('hidden');
+      resultSection.classList.add('hidden');
+      generationUnavailable.classList.add('hidden');
     }, 300);
   });
 
@@ -123,10 +126,15 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   // Форма генерации запроса
+  const schemaContextInput = document.getElementById('schemaContext');
+  const liveResultSource = document.getElementById('liveResultSource');
+  const demoResultSource = document.getElementById('demoResultSource');
   document.getElementById('queryForm').addEventListener('submit', async function(e) {
     e.preventDefault();
+    generationUnavailable.classList.add('hidden');
 
     const text = queryInput.value.trim();
+    const schemaContext = schemaContextInput.value.trim();
     const dbType = document.getElementById('dbType').value;
     const complexity = document.getElementById('complexity').value;
 
@@ -135,6 +143,16 @@ document.addEventListener('DOMContentLoaded', function() {
         ? 'Пожалуйста, опишите ваш запрос'
         : 'Please describe your query', 'error');
       return;
+    }
+
+    if (schemaContext.length > schemaContextInput.maxLength) {
+      showAlert(window.t('schemaContextTooLong'), 'error');
+      return;
+    }
+
+    const requestBody = { text, db_type: dbType, complexity, language: currentLang };
+    if (schemaContext) {
+      requestBody.schema_context = schemaContext;
     }
 
     // Индикатор загрузки
@@ -146,7 +164,7 @@ document.addEventListener('DOMContentLoaded', function() {
     submitBtn.disabled = true;
 
     // Скрываем старый результат
-    document.getElementById('result').classList.add('hidden');
+    resultSection.classList.add('hidden');
 
     try {
       console.log('📤 Sending request to:', `${API_BASE_URL}/generate`);
@@ -157,15 +175,15 @@ document.addEventListener('DOMContentLoaded', function() {
           'Content-Type': 'application/json',
           'Accept': 'application/json'
         },
-        body: JSON.stringify({
-          text: text,
-          db_type: dbType,
-          complexity: complexity,
-          language: currentLang
-        })
+        body: JSON.stringify(requestBody)
       });
 
       console.log('📥 Received response:', response.status);
+
+      if (response.status === 503) {
+        generationUnavailable.classList.remove('hidden');
+        return;
+      }
 
       if (!response.ok) {
         let errorText = `HTTP error ${response.status}`;
@@ -188,17 +206,23 @@ document.addEventListener('DOMContentLoaded', function() {
         ? `Время: ${result.executed_in} сек. | Модель: ${result.model}`
         : `Time: ${result.executed_in} sec. | Model: ${result.model}`;
 
-      document.getElementById('result').classList.remove('hidden');
+      liveResultSource.classList.toggle('hidden', result.source !== 'live');
+      demoResultSource.classList.toggle('hidden', result.source !== 'demo');
+      resultSection.classList.remove('hidden');
 
       // Прокручиваем к результату
       setTimeout(() => {
-        document.getElementById('result').scrollIntoView({
+        resultSection.scrollIntoView({
           behavior: 'smooth',
           block: 'center'
         });
       }, 100);
 
-      showAlert(currentLang === 'ru' ? '✅ Запрос успешно сгенерирован!' : '✅ Query generated successfully!', 'success');
+      if (result.source === 'demo') {
+        showAlert(window.t('demoResult'), 'info');
+      } else if (result.source === 'live') {
+        showAlert(currentLang === 'ru' ? '✅ Запрос успешно сгенерирован!' : '✅ Query generated successfully!', 'success');
+      }
 
     } catch (error) {
       console.error('❌ Error generating query:', error);
@@ -212,7 +236,9 @@ document.addEventListener('DOMContentLoaded', function() {
         : 'Check backend connection.';
       document.getElementById('executionTime').textContent = '';
 
-      document.getElementById('result').classList.remove('hidden');
+      liveResultSource.classList.add('hidden');
+      demoResultSource.classList.add('hidden');
+      resultSection.classList.remove('hidden');
 
       showAlert(currentLang === 'ru'
         ? `❌ Ошибка: ${error.message}`

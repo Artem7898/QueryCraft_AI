@@ -11,6 +11,7 @@ def test_query_request_normalizes_text_and_preserves_defaults() -> None:
     assert request.db_type is DatabaseType.POSTGRESQL
     assert request.complexity is Complexity.MEDIUM
     assert request.language == "ru"
+    assert request.schema_context is None
 
 
 @pytest.mark.parametrize("length", [3, 1000])
@@ -24,12 +25,27 @@ def test_query_request_rejects_invalid_text(text: str) -> None:
         QueryRequest(text=text)
 
 
+def test_query_request_schema_context_is_optional_and_trimmed() -> None:
+    assert QueryRequest(text="Show users", schema_context="   ").schema_context is None
+    assert QueryRequest(text="Show users", schema_context="\n users(id) \n").schema_context == (
+        "users(id)"
+    )
+    context = "x" * 3000
+    assert QueryRequest(text="Show users", schema_context=f" {context} ").schema_context == context
+
+
+def test_query_request_rejects_embedded_null_in_schema_context() -> None:
+    with pytest.raises(ValidationError):
+        QueryRequest(text="Show users", schema_context="users\0(id)")
+
+
 def test_query_response_preserves_wire_types() -> None:
     response = QueryResponse(
         query="SELECT id FROM users;",
         explanation="List user IDs.",
         model="test-model",
         executed_in=1.5,
+        source="live",
     )
 
     assert response.model_dump(mode="json") == {
@@ -38,6 +54,7 @@ def test_query_response_preserves_wire_types() -> None:
         "model": "test-model",
         "executed_in": 1.5,
         "tokens_used": None,
+        "source": "live",
     }
 
 
@@ -53,4 +70,5 @@ def test_query_response_rejects_invalid_metrics(executed_in: float, tokens_used:
             model="test-model",
             executed_in=executed_in,
             tokens_used=tokens_used,
+            source="live",
         )

@@ -14,7 +14,12 @@ from fastapi.responses import JSONResponse
 from app.api.v1.endpoints import query
 from app.config import Settings
 from app.runtime import RateLimiter, Runtime
-from app.services.ai_service import AIService, ProviderError, ProviderTimeoutError
+from app.services.ai_service import (
+    AIService,
+    ProviderError,
+    ProviderTimeoutError,
+    ProviderUnavailableError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +96,11 @@ def create_app(
 
     @application.exception_handler(ProviderError)
     async def upstream_error(_: Request, exc: ProviderError) -> JSONResponse:
+        if isinstance(exc, ProviderUnavailableError):
+            return JSONResponse(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                content={"detail": "Generation provider is not configured"},
+            )
         if isinstance(exc, ProviderTimeoutError):
             logger.warning("Query generation provider timed out")
             return JSONResponse(

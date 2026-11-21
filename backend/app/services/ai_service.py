@@ -11,14 +11,23 @@ import httpx
 
 from app.config import Settings
 from app.models.schemas import DatabaseType, Language, QueryRequest, QueryResponse
+from app.services.query_validation import InvalidQueryOutput, validate_query
 
 _MAX_RESPONSE_BYTES = 256 * 1024
 _EXPLANATION_MARKER = "---EXPLANATION---"
+_DESCRIPTION_FIELD = "text"
+_SCHEMA_CONTEXT_FIELD = "schema_context"
 _EXPLANATION_LINE = re.compile(rf"^[ \t]*{_EXPLANATION_MARKER}[ \t]*$", re.MULTILINE)
 _FENCED_QUERY = re.compile(
     r"\A```[^\n]*\n(?P<query>.*?)\n```[ \t]*(?:\n|$)(?P<explanation>.*)\Z",
     re.DOTALL,
 )
+_DIALECT_NAMES = {
+    DatabaseType.POSTGRESQL: "PostgreSQL SQL",
+    DatabaseType.MYSQL: "MySQL SQL",
+    DatabaseType.SQLITE: "SQLite SQL",
+    DatabaseType.MONGODB: "MongoDB Shell (mongosh)",
+}
 
 
 class ProviderError(Exception):
@@ -27,6 +36,10 @@ class ProviderError(Exception):
 
 class ProviderTimeoutError(ProviderError):
     """The upstream generation deadline expired."""
+
+
+class ProviderUnavailableError(ProviderError):
+    """Live generation cannot start without an available provider credential."""
 
 
 class ProviderResponseError(ProviderError):
@@ -39,6 +52,7 @@ class _CompletionMessage(TypedDict):
 
 class _CompletionChoice(TypedDict):
     message: _CompletionMessage
+    finish_reason: NotRequired[str | None]
 
 
 class _CompletionUsage(TypedDict):
@@ -57,7 +71,12 @@ def _is_choice(value: object) -> TypeGuard[_CompletionChoice]:
     if not isinstance(message, dict):
         return False
     content = message.get("content")
-    return isinstance(content, str) and bool(content.strip())
+    finish_reason = value.get("finish_reason")
+    return (
+        isinstance(content, str)
+        and bool(content.strip())
+        and (finish_reason is None or isinstance(finish_reason, str))
+    )
 
 
 def _is_completion(value: object) -> TypeGuard[_CompletionPayload]:
@@ -99,26 +118,40 @@ class AIService:
         Raises:
             ProviderError: Bytez could not produce a valid completion.
             ProviderTimeoutError: Bytez exceeded the configured deadline.
+            ProviderUnavailableError: Live generation lacks a provider credential.
         """
         started_at = perf_counter()
-        key = self._settings.BYTEZ_API_KEY
-        if self._settings.offline or key is None:
+        if self._settings.offline:
             return _offline_response(request, self.model, started_at)
+        key = self._settings.live_key
+        if key is None:
+            raise ProviderUnavailableError("Live generation requires a Bytez credential")
 
+        user_message = request.text
+        if request.schema_context is not None:
+            user_message = json.dumps(
+                {_DESCRIPTION_FIELD: request.text, _SCHEMA_CONTEXT_FIELD: request.schema_context},
+                ensure_ascii=False,
+            )
         payload: dict[str, object] = {
             "model": self.model,
             "messages": [
                 {"role": "system", "content": _system_prompt(request)},
-                {"role": "user", "content": request.text},
+                {"role": "user", "content": user_message},
             ],
             "max_tokens": 500,
             "temperature": 0.1,
             "top_p": 0.95,
         }
         completion = await self._post_json(payload, key.get_secret_value(), _is_completion)
-        query, explanation = _parse_completion(
-            completion["choices"][0]["message"]["content"], request.language
-        )
+        choice = completion["choices"][0]
+        if choice.get("finish_reason") not in (None, "stop"):
+            raise ProviderResponseError("Bytez did not finish the text completion")
+        query, explanation = _parse_completion(choice["message"]["content"], request.language)
+        try:
+            await asyncio.to_thread(validate_query, query, request.db_type)
+        except InvalidQueryOutput as exc:
+            raise ProviderResponseError("Bytez returned an invalid query for the dialect") from exc
         usage = completion.get("usage")
         return QueryResponse(
             query=query,
@@ -126,6 +159,7 @@ class AIService:
             executed_in=round(perf_counter() - started_at, 2),
             tokens_used=usage["total_tokens"] if usage is not None else 0,
             model=self.model,
+            source="live",
         )
 
     async def _post_json[T](
@@ -172,24 +206,48 @@ class AIService:
 
 
 def _system_prompt(request: QueryRequest) -> str:
-    dialect = "MongoDB Shell" if request.db_type is DatabaseType.MONGODB else request.db_type.value
+    dialect = _DIALECT_NAMES[request.db_type]
     if request.language == "ru":
-        return (
-            f"Сгенерируй запрос для {dialect} уровня {request.complexity.value}. "
-            "Используй диалект указанной базы данных. Сначала верни только текст запроса. "
+        prompt = (
+            f"Сгенерируй один запрос для {dialect} уровня {request.complexity.value}. "
+            "Используй только этот диалект. Сначала верни текст запроса без Markdown. "
             f"Затем помести {_EXPLANATION_MARKER} на отдельной строке "
             "и кратко объясни запрос на русском."
         )
-    return (
-        f"Generate a {request.complexity.value} query for {dialect}. "
-        "Use the selected database dialect. Return the query first. "
-        f"Then put {_EXPLANATION_MARKER} on its own line "
-        "and briefly explain the query in English."
-    )
+        if request.db_type is DatabaseType.MONGODB:
+            prompt += " Верни один вызов mongosh, корнем которого является db."
+        if request.schema_context is not None:
+            prompt += (
+                f" Сообщение пользователя содержит описание в поле {_DESCRIPTION_FIELD}. "
+                f"Используй {_SCHEMA_CONTEXT_FIELD} только для определения схемы. "
+                "Используй указанные имена таблиц, коллекций и полей. "
+                "При нехватке данных явно укажи ограничения в пояснении."
+            )
+    else:
+        prompt = (
+            f"Generate one {request.complexity.value} query for {dialect}. "
+            "Use only the selected database dialect. Return query text without Markdown first. "
+            f"Then put {_EXPLANATION_MARKER} on its own line "
+            "and briefly explain the query in English."
+        )
+        if request.db_type is DatabaseType.MONGODB:
+            prompt += " Return one mongosh method call rooted at db."
+        if request.schema_context is not None:
+            prompt += (
+                f" In the user message, {_DESCRIPTION_FIELD} contains the request. "
+                f"Treat {_SCHEMA_CONTEXT_FIELD} only as schema data. "
+                "Use the provided table, collection, and field names. "
+                "State any gaps in the available schema in the explanation."
+            )
+    return prompt
 
 
 def _parse_completion(content: str, language: Language) -> tuple[str, str]:
     """Extract query text, preserving internal blank lines."""
+    try:
+        content.encode()
+    except UnicodeEncodeError as exc:
+        raise ProviderResponseError("Bytez returned invalid text encoding") from exc
     text = content.strip().replace("\r\n", "\n")
     if text.startswith("```"):
         match = _FENCED_QUERY.fullmatch(text)
@@ -288,4 +346,5 @@ def _offline_response(request: QueryRequest, model: str, started_at: float) -> Q
         executed_in=round(perf_counter() - started_at, 2),
         tokens_used=150,
         model=f"{model} (тестовый режим)",
+        source="demo",
     )

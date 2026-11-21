@@ -11,7 +11,7 @@ from starlette.types import Message
 from app.models.schemas import QueryRequest, QueryResponse
 from app.runtime import Runtime, get_runtime
 
-MAX_GENERATION_BODY_BYTES = 16 * 1024
+MAX_GENERATION_BODY_BYTES = 64 * 1024
 
 
 class GenerateRoute(APIRoute):
@@ -69,6 +69,7 @@ generation = APIRouter(route_class=GenerateRoute)
         413: {"description": "Request body too large"},
         429: {"description": "Generation rate limit exceeded"},
         502: {"description": "Generation provider failed"},
+        503: {"description": "Generation provider is not configured"},
         504: {"description": "Generation provider timed out"},
     },
 )

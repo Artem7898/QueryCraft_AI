@@ -13,7 +13,7 @@ from pydantic import (
 )
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
-from app.models.schemas import QUERY_TEXT_MAX_LENGTH, QUERY_TEXT_MIN_LENGTH
+from app.models.schemas import QUERY_TEXT_MAX_LENGTH, QUERY_TEXT_MIN_LENGTH, GenerationSource
 
 OFFLINE_BYTEZ_KEY = "your_api_key_here"
 
@@ -56,6 +56,7 @@ class Settings(BaseSettings):
         hide_input_in_errors=True,
     )
 
+    GENERATION_MODE: GenerationSource = "live"
     BYTEZ_API_KEY: SecretStr | None = None
     MODEL_NAME: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)] = (
         "Qwen/Qwen2-7B-Instruct"
@@ -84,11 +85,19 @@ class Settings(BaseSettings):
 
     @property
     def offline(self) -> bool:
-        """Return whether generation uses local examples."""
+        """Return whether local demo examples were explicitly requested."""
         key = self.BYTEZ_API_KEY
-        if key is None:
-            return True
-        return key.get_secret_value() == OFFLINE_BYTEZ_KEY
+        return self.GENERATION_MODE == "demo" or (
+            key is not None and key.get_secret_value() == OFFLINE_BYTEZ_KEY
+        )
+
+    @property
+    def live_key(self) -> SecretStr | None:
+        """Return the configured provider credential, excluding the demo marker."""
+        key = self.BYTEZ_API_KEY
+        if key is not None and key.get_secret_value() != OFFLINE_BYTEZ_KEY:
+            return key
+        return None
 
     @field_validator("BYTEZ_API_KEY")
     @classmethod
@@ -147,5 +156,7 @@ class Settings(BaseSettings):
             if self.DEBUG:
                 raise ValueError("DEBUG cannot be enabled in production")
             if self.offline:
+                raise ValueError("Production does not allow demo generation")
+            if self.live_key is None:
                 raise ValueError("Production requires BYTEZ_API_KEY")
         return self

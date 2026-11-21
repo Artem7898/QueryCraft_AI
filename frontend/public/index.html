@@ -233,7 +233,7 @@
     <!-- Modal -->
     <div id="queryModal"
          class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 opacity-0 pointer-events-none transition-all duration-300 hidden">
-        <div class="w-full max-w-2xl mx-4 p-8 rounded-2xl shadow-2xl bg-[var(--color-bg)] border border-[var(--color-border)] transform transition-all duration-300 scale-95">
+        <div class="w-full max-w-2xl max-h-[90vh] overflow-y-auto mx-4 p-8 rounded-2xl shadow-2xl bg-[var(--color-bg)] border border-[var(--color-border)] transform transition-all duration-300 scale-95">
             <div class="flex justify-between items-center mb-8">
                 <h3 class="text-xl font-bold flex items-center space-x-3">
                     <svg class="w-6 h-6 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -257,6 +257,18 @@
                               style="border-color: var(--color-border); background: var(--color-bg); color: var(--color-text);"
                               placeholder="Например: показать всех активных пользователей старше 25 лет, отсортированных по дате регистрации"
                               data-i18n-placeholder="inputPlaceholder"></textarea>
+                </div>
+
+                <div>
+                    <label for="schemaContext" class="block text-sm font-medium mb-2" data-i18n="schemaContext">
+                        Схема данных (необязательно)
+                    </label>
+                    <textarea id="schemaContext" rows="3" maxlength="3000" aria-describedby="schemaContextHint"
+                              class="w-full p-3 rounded-xl border-2 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+                              style="border-color: var(--color-border); background: var(--color-bg); color: var(--color-text);"></textarea>
+                    <p id="schemaContextHint" class="mt-2 text-xs text-gray-500 dark:text-gray-400" data-i18n="schemaContextHint">
+                        Укажите таблицы или коллекции, поля и связи. До 3000 символов.
+                    </p>
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -307,14 +319,23 @@
                 </button>
             </form>
 
+            <p id="generationUnavailable" role="alert" class="mt-4 p-3 rounded-lg border text-sm hidden"
+               style="border-color: var(--color-error);" data-i18n="generationUnavailable">
+                Генерация недоступна. Настройте провайдера генерации на сервере или обратитесь к администратору.
+            </p>
+
             <!-- Result -->
             <div id="result" class="mt-8 hidden">
+                <p id="liveResultSource" role="status" class="mb-3 pl-3 border-l-4 font-semibold text-sm hidden"
+                   style="border-color: var(--color-success);" data-i18n="liveResult">Сгенерировано моделью</p>
+                <p id="demoResultSource" role="status" class="mb-3 pl-3 border-l-4 font-semibold text-sm hidden"
+                   style="border-color: var(--color-warning);" data-i18n="demoResult">Демонстрационный шаблон</p>
                 <div class="flex justify-between items-center mb-4">
                     <h4 class="font-bold text-sm flex items-center">
                         <svg class="w-4 h-4 mr-2 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                         </svg>
-                        Сгенерированный SQL:
+                        <span data-i18n="queryResult">Текст запроса</span>
                     </h4>
                     <button id="copyBtn"
                             class="px-4 py-2 rounded-lg text-sm font-medium transition-all hover:scale-105 flex items-center space-x-2"
