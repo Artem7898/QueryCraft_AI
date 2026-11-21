@@ -1,5 +1,3 @@
-[file name]: assets/js/csp-config.js
-[file content begin]
 /**
  * Content Security Policy Configuration
  */
@@ -27,4 +25,3 @@ function applyCSP() {
 }
 
 document.addEventListener('DOMContentLoaded', applyCSP);
-[file content end]

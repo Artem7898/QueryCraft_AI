@@ -1,22 +1,15 @@
-def test_health_endpoint(client):
-    """Тест эндпоинта проверки здоровья."""
-    response = client.get("/api/v1/health")
+from fastapi.testclient import TestClient
 
-    assert response.status_code == 200
-    data = response.json()
-    assert "status" in data
-    assert data["status"] == "healthy"  # Изменено с "ok" на "healthy"
+from app.config import Settings
 
 
-def test_health_endpoint_with_details(client):
-    """Тест эндпоинта здоровья с проверкой деталей."""
+def test_api_health_endpoint(client: TestClient, offline_settings: Settings) -> None:
     response = client.get("/api/v1/health?detailed=true")
 
     assert response.status_code == 200
-    data = response.json()
-    assert "status" in data
-    assert "timestamp" in data
-    assert "service" in data
-    assert (
-        data["service"] == "QueryCraft AI"
-    )  # Изменено с "QueryCraft AI API" на "QueryCraft AI"
+    health = response.json()
+    assert set(health) == {"status", "model", "service", "timestamp"}
+    assert health["status"] == "healthy"
+    assert health["model"] == offline_settings.MODEL_NAME
+    assert health["service"] == "QueryCraft AI"
+    assert isinstance(health["timestamp"], int | float)

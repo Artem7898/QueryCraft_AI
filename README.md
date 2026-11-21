@@ -1,129 +1,145 @@
-# 🚀 QueryCraft AI - Генератор SQL-запросов на основе ИИ
+# QueryCraft AI
 
-<div align="center">
+QueryCraft AI превращает описание на русском или английском в черновик запроса для PostgreSQL, MySQL, SQLite или MongoDB. API возвращает текст запроса, пояснение и метаданные генерации. Приложение не подключается к СУБД и не выполняет запросы. Перед использованием сверьте результат со схемой данных и требованиями задачи.
 
-![QueryCraft AI Logo](https://img.shields.io/badge/QueryCraft-AI-blue?style=for-the-badge&logo=sql&logoColor=white)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.104.1-009688?style=for-the-badge&logo=fastapi&logoColor=white)
-![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3.4-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)
-![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white)
-![Лицензия](https://img.shields.io/badge/лицензия-MIT-green?style=for-the-badge)
+## Архитектура
 
-**Преобразуйте естественный язык в SQL-запросы с помощью искусственного интеллекта**
+```mermaid
+flowchart LR
+    UI["Статический веб-интерфейс"] --> API["FastAPI · POST /api/v1/generate"]
+    API -->|"Демо-режим"| Demo["Локальные примеры"]
+    API -->|"Ключ Bytez задан"| Bytez["Bytez · HTTPX"]
+```
 
-[✨ Возможности](#возможности) • [🚀 Быстрый старт](#быстрый-старт) • [🛠 Технологии](#технологии) • [📁 Структура проекта](#структура-проекта) • [🤝 Участие в разработке](#участие-в-разработке)
+- **API** проверяет входные данные через Pydantic v2, ограничивает размер и частоту запросов. Асинхронный клиент HTTPX и пул соединений живут в пределах одного процесса FastAPI.
+- **Генерация** использует Bytez и модель `Qwen/Qwen2-7B-Instruct` по умолчанию. Без ключа API возвращает заранее подготовленные примеры для выбранного диалекта.
+- **Веб-интерфейс** работает на HTML, CSS и JavaScript без этапа сборки. Подсветка отображает ответ провайдера как текст в DOM.
 
-</div>
+## Локальный запуск
 
-## 📖 О проекте
+Требуется Python 3.12 или 3.13. Node.js и npm нужны для проверок фронтенда. Команды ниже рассчитаны на Bash.
 
-**QueryCraft AI** — это инновационное веб-приложение, которое позволяет разработчикам, аналитикам данных и всем, кто работает с базами данных, генерировать SQL-запросы, просто описывая их на естественном языке (русском или английском).
-
-Приложение использует современные модели искусственного интеллекта (Qwen2-7B-Instruct через BYTEZ API) для понимания ваших запросов и преобразования их в оптимизированный SQL-код.
-
-### 🎯 Для кого этот проект?
-
-- **Разработчики**, которые хотят быстро создавать сложные SQL-запросы
-- **Аналитики данных**, которым нужно извлекать информацию без глубокого знания SQL
-- **Студенты**, изучающие SQL и базы данных
-- **Менеджеры проектов**, которым нужны данные из БД без обращения к разработчикам
-- **Все**, кто работает с базами данных
-
-## ✨ Возможности
-
-### 🌐 **Мультиязычный интерфейс**
-- 🇷🇺 Полная поддержка русского языка
-- 🇺🇸 Английский интерфейс для международной аудитории
-- Динамическое переключение языков без перезагрузки страницы
-
-### 🎨 **5 красивых тем оформления**
-- 🌞 **Светлая** — классическая тема для дневной работы
-- 🌙 **Темная** — комфортная для работы ночью
-- 🔷 **Бирюзовая** — для максимальной концентрации
-- 🌿 **Зеленая** — расслабляющая тема для длительной работы
-- 🌲 **Лесная** — темно-зеленая профессиональная тема
-
-### 🛠 **Поддержка различных СУБД**
-- **PostgreSQL** — с поддержкой оконных функций и CTE
-- **MySQL** — с учетом особенностей движков InnoDB/MyISAM
-- **SQLite** — для локальных и мобильных приложений
-- **MongoDB** — NoSQL-запросы для документ-ориентированных БД
-
-### 📊 **Уровни сложности запросов**
-- **Простой** — базовые SELECT, WHERE, ORDER BY
-- **Средний** — JOIN, GROUP BY, агрегатные функции
-- **Продвинутый** — подзапросы, оконные функции, CTE
-
-### 💫 Дополнительные функции
-- **Копирование SQL в один клик**
-- **Подсветка синтаксиса SQL** для лучшей читаемости
-- **История запросов** (в разработке)
-- **PWA поддержка** — устанавливайте как нативное приложение
-- **Адаптивный дизайн** — работает на всех устройствах
-- **Карусель примеров** — готовые шаблоны запросов
-
-## 🛠 Технологии
-
-### **Backend (Python)**
-- **FastAPI** — современный, быстрый веб-фреймворк
-- **Pydantic** — валидация данных и схемы
-- **HTTPX** — асинхронный HTTP-клиент
-- **Uvicorn** — ASGI-сервер для FastAPI
-- **Python-dotenv** — управление переменными окружения
-
-### **Frontend**
-- **HTML5** — семантическая разметка
-- **Tailwind CSS 3.4** — утилитарный CSS-фреймворк
-- **Vanilla JavaScript** — нативный JS без фреймворков
-- **Swiper.js** — современный слайдер для карусели
-- **Service Workers** — PWA функционал
-
-### **Интеграции**
-- **BYTEZ API** — доступ к моделям искусственного интеллекта
-- **Qwen/Qwen2-7B-Instruct** — модель для генерации SQL
-- **CORS** — безопасное межсайтовое взаимодействие
-
-### **Инструменты разработки**
-- **Python 3.11+** — основной язык бэкенда
-- **Virtual Environment** — изоляция зависимостей
-- **Git** — контроль версий
-- **Docker** (опционально) — контейнеризация
-
-## 🚀 Быстрый старт
-
-### Предварительные требования
-- Python 3.11 или выше
-- BYTEZ API ключ (можно начать без него)
-- cd backend
-- python -m venv venv
-
-### Linux/Mac
-- source venv/bin/activate
-
-### Windows
-- venv\Scripts\activate
-
-- pip install -r requirements.txt
-
-### Создание .env файла
-- cp .env.example .env
-
-### Отредактируйте .env, добавив свой BYTEZ_API_KEY
-
-### Frontend — статические файлы, готовы к использованию
-- cd frontend/public
-
-#### Терминал 1 — Backend
-- cd backend
-- uvicorn app.main:app --reload --port 8000
-
-### Терминал 2 — Frontend
-- cd frontend/public
-- python -m http.server 3000
-### Откройте http://localhost:3000 в вашем браузере
-
-
-### 1. Клонирование репозитория
 ```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r backend/requirements-dev.txt
+```
 
-git clone https://github.com/Artem7898/querycraft-ai.git
-cd querycraft-ai
+Запустите API из каталога `backend/`. Команда явно включает демо-режим, поэтому ключ Bytez не требуется.
+
+```bash
+cd backend
+BYTEZ_API_KEY=your_api_key_here python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+Во втором терминале из корня репозитория запустите статический сервер.
+
+```bash
+python3 -m http.server --bind 127.0.0.1 --directory frontend/public 3000
+```
+
+Откройте страницу на `http://localhost:3000`. Браузер обращается к API на `http://localhost:8000/api/v1`. Для полной отрисовки стилей, шрифтов и карусели странице нужен доступ к CDN Tailwind, Swiper и Google Fonts.
+
+## HTTP API
+
+| Маршрут | Назначение |
+| --- | --- |
+| `POST /api/v1/generate` | Генерация черновика запроса |
+| `GET /health` | Проверка доступности API |
+| `GET /api/v1/health` | Состояние API и имя модели. Маршрут работает без запроса к Bytez |
+| `GET /api/docs` | Swagger UI |
+| `GET /api/redoc` | ReDoc |
+| `GET /openapi.json` | Схема OpenAPI |
+
+### Запрос генерации
+
+```bash
+curl --fail-with-body --silent --show-error http://127.0.0.1:8000/api/v1/generate \
+  -H 'Content-Type: application/json' \
+  --data '{"text":"Show active users older than 25","db_type":"postgresql","complexity":"simple","language":"en"}'
+```
+
+| Поле | Допустимые значения | По умолчанию |
+| --- | --- | --- |
+| `text` | Строка из 3–1000 символов после удаления пробелов по краям | Обязательное поле |
+| `db_type` | `postgresql`, `mysql`, `sqlite`, `mongodb` | `postgresql` |
+| `complexity` | `simple`, `medium`, `advanced` | `medium` |
+| `language` | `ru`, `en` | `ru` |
+
+Пример ответа в демо-режиме:
+
+```json
+{
+  "query": "SELECT id, username, email, age, status, created_at\nFROM users\nWHERE status = 'active' AND age > 25\nORDER BY created_at DESC\nLIMIT 100;",
+  "explanation": "Selects active users older than 25",
+  "executed_in": 0.0,
+  "tokens_used": 150,
+  "model": "Qwen/Qwen2-7B-Instruct (тестовый режим)"
+}
+```
+
+`executed_in` измеряется в секундах. В демо-режиме `tokens_used` содержит условное значение.
+
+| Статус | Причина |
+| --- | --- |
+| `413` | Тело запроса превышает 16 КиБ |
+| `422` | Некорректный JSON или ошибка валидации полей |
+| `429` | Исчерпан лимит генерации. Время ожидания указано в `Retry-After` |
+| `502` | Ошибка провайдера или неожиданный формат ответа |
+| `504` | Истёк тайм-аут обращения к провайдеру |
+
+## Конфигурация
+
+Приложение читает переменные окружения и файл `.env` из рабочей директории процесса. При запуске из `backend/` используйте `backend/.env`. Переменные окружения имеют приоритет.
+
+| Переменная | По умолчанию | Назначение |
+| --- | --- | --- |
+| `BYTEZ_API_KEY` | Не задана | Ключ для генерации через Bytez. Пустое значение или `your_api_key_here` включает демо-режим |
+| `BYTEZ_API_URL` | `https://api.bytez.com/models/v2/openai/v1` | Базовый HTTPS-адрес провайдера |
+| `MODEL_NAME` | `Qwen/Qwen2-7B-Instruct` | Идентификатор модели |
+| `API_TIMEOUT` | `30` | Общий тайм-аут обращения к Bytez в секундах, диапазон 5–120 |
+| `ALLOWED_ORIGINS` | Локальные источники на портах 3000 и 8000 | Разрешённые источники CORS в формате JSON-массива или списка через запятую |
+| `MAX_QUERY_LENGTH` | `1000` | Максимальная длина описания, диапазон 3–1000 |
+| `MAX_REQUESTS_PER_MINUTE` | `60` | Общий лимит запросов генерации в минуту на процесс |
+| `ENVIRONMENT` | `development` | При значении `production` требуется ключ Bytez и `DEBUG=false` |
+| `DEBUG` | `false` | Флаг конфигурации для разработки |
+| `APP_NAME` | `QueryCraft AI` | Имя приложения в заголовке документации API |
+
+Для генерации через Bytez задайте ключ в окружении или в локальном `.env` и уберите `BYTEZ_API_KEY=your_api_key_here` из команды запуска. В этом режиме описания запросов отправляются в Bytez. Храните ключ вне Git.
+
+Веб-интерфейс настроен на локальный API. При сетевом развёртывании укажите доступный браузеру адрес в `API_BASE_URL` и разрешите соответствующий источник через `ALLOWED_ORIGINS`. При нескольких воркерах применяйте общий лимит и контроль доступа на шлюзе. [Настройка адреса API](frontend/public/assets/js/main.js)
+
+## Проверки
+
+Из корня репозитория в активированном Python-окружении:
+
+```bash
+python -m pytest -q
+ruff check backend
+ruff format --check backend
+mypy
+```
+
+При запущенном API в демо-режиме команда `python backend/cors_test.py` проверяет CORS и генерацию по HTTP. Тесты обращений к Bytez используют подставной HTTP-транспорт и выполняются без реального ключа.
+
+Проверки фронтенда:
+
+```bash
+cd frontend
+npm install
+npm run lint
+npm test -- --runInBand
+```
+
+## Структура репозитория
+
+| Путь | Назначение |
+| --- | --- |
+| [`backend/app/main.py`](backend/app/main.py) | Фабрика FastAPI и жизненный цикл приложения |
+| [`backend/app/api/v1/endpoints/query.py`](backend/app/api/v1/endpoints/query.py) | Генерация, диагностика и ограничения входящих запросов |
+| [`backend/app/config.py`](backend/app/config.py) | Настройки и их валидация |
+| [`backend/app/models/schemas.py`](backend/app/models/schemas.py) | Схемы запросов и ответов |
+| [`backend/app/services/ai_service.py`](backend/app/services/ai_service.py) | Интеграция с Bytez и локальные примеры |
+| [`backend/tests/`](backend/tests/) | Тесты API, конфигурации и провайдера |
+| [`frontend/public/`](frontend/public/) | Статические ресурсы |
+| [`frontend/tests/`](frontend/tests/) | Тесты браузерного JavaScript |

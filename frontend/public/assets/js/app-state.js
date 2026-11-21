@@ -144,7 +144,7 @@ class AppState {
 
       this.setState({ apiConnected: connected });
       return connected;
-    } catch (error) {
+    } catch {
       this.setState({ apiConnected: false });
       return false;
     }

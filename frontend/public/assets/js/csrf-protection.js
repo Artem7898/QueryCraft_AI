@@ -1,5 +1,3 @@
-[file name]: assets/js/csrf-protection.js
-[file content begin]
 /**
  * CSRF Protection для QueryCraft AI
  */
@@ -62,4 +60,3 @@ class CSRFProtection {
 }
 
 window.csrfProtection = new CSRFProtection();
-[file content end]

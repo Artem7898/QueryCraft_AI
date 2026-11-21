@@ -1,124 +1,198 @@
+import json
+from collections.abc import AsyncIterator
+
+import httpx
 import pytest
+from fastapi.testclient import TestClient
+from pydantic import SecretStr
+
+from app.config import Settings
+from app.main import create_app
 
 
-def test_generate_without_auth(client):
-    """Тест генерации без авторизации."""
-    response = client.post(
-        "/api/v1/generate",
-        json={
-            "text": "test query",
-            "db_type": "postgresql",
-            "complexity": "simple",
-            "language": "ru",
-        },
+class TrackingTransport(httpx.MockTransport):
+    """Observe when the application's HTTP client closes its transport."""
+
+    closed: bool = False
+
+    async def aclose(self) -> None:
+        self.closed = True
+        await super().aclose()
+
+
+@pytest.fixture
+def provider_settings() -> Settings:
+    return Settings(
+        BYTEZ_API_KEY=SecretStr("synthetic-test-key"),
+        BYTEZ_API_URL="https://provider.example/v1",
+        ENVIRONMENT="development",
+        DEBUG=False,
+        MAX_REQUESTS_PER_MINUTE=60,
+        _env_file=None,
     )
 
-    # Должен вернуть 200 даже без API ключа (если используется мок)
-    assert response.status_code in [200, 401]
 
-
-def test_generate_with_missing_fields(client):
-    """Тест генерации с пропущенными обязательными полями."""
-    response = client.post("/api/v1/generate", json={})
-
-    assert response.status_code == 422  # Validation error
-
-
-def test_generate_with_empty_text(client):
-    """Тест генерации с пустым текстом."""
-    response = client.post(
-        "/api/v1/generate",
-        json={
-            "text": "",
-            "db_type": "postgresql",
-            "complexity": "simple",
-            "language": "ru",
-        },
-    )
-
-    assert response.status_code == 422
-
-
-@pytest.mark.asyncio
-async def test_generate_with_mock_ai(client, mocker, valid_query_request):
-    """Тест генерации с моком AI API."""
-    # Мокаем запрос к внешнему AI API
-    mock_response = mocker.Mock()
-    mock_response.status_code = 200
-    mock_response.json.return_value = {
-        "choices": [
-            {
-                "message": {
-                    "content": "SELECT * FROM users WHERE active = true; -- Active users"
-                }
-            }
-        ]
-    }
-
-    # Убираем with и используем просто патч
-    mocker.patch("httpx.AsyncClient.post", return_value=mock_response)
-
+def test_offline_generation(client: TestClient, valid_query_request: dict[str, str]) -> None:
     response = client.post("/api/v1/generate", json=valid_query_request)
 
     assert response.status_code == 200
     data = response.json()
-    assert "query" in data
-    assert "explanation" in data
-    assert "model" in data
-    assert "executed_in" in data
+    assert "FROM users" in data["query"]
+    assert data["explanation"]
+    assert "тестовый режим" in data["model"]
+    assert data["executed_in"] >= 0
 
 
-def test_generate_with_different_db_types(client, mocker):
-    """Тест генерации для разных типов БД."""
-    db_types = ["postgresql", "mysql", "sqlite", "mongodb"]
+@pytest.mark.parametrize("db_type", ["postgresql", "mysql", "sqlite", "mongodb"])
+@pytest.mark.parametrize("language", ["ru", "en"])
+def test_supported_generation_options(client: TestClient, db_type: str, language: str) -> None:
+    response = client.post(
+        "/api/v1/generate",
+        json={
+            "text": "Show a sample result",
+            "db_type": db_type,
+            "complexity": "medium",
+            "language": language,
+        },
+    )
 
-    mock_response = mocker.Mock()
-    mock_response.status_code = 200
-    mock_response.json.return_value = {
-        "choices": [{"message": {"content": "Test query"}}]
-    }
+    assert response.status_code == 200
+    assert response.json()["query"]
 
-    # Убираем with
-    mocker.patch("httpx.AsyncClient.post", return_value=mock_response)
 
-    for db_type in db_types:
-        response = client.post(
-            "/api/v1/generate",
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"text": ""},
+        {"text": "   "},
+        {"text": 123},
+        {"text": "Show users", "db_type": "unsupported"},
+        {"text": "Show users", "complexity": "unsupported"},
+        {"text": "Show users", "language": "unsupported"},
+        {"text": "Show users", "unexpected": True},
+    ],
+)
+def test_invalid_requests_are_rejected(client: TestClient, payload: dict[str, object]) -> None:
+    assert client.post("/api/v1/generate", json=payload).status_code == 422
+
+
+def test_configured_prompt_limit_does_not_echo_text(
+    offline_settings: Settings, valid_query_request: dict[str, str]
+) -> None:
+    settings = offline_settings.model_copy(update={"MAX_QUERY_LENGTH": 10})
+    with TestClient(create_app(settings)) as test_client:
+        assert (
+            test_client.post(
+                "/api/v1/generate", json={**valid_query_request, "text": "x" * 10}
+            ).status_code
+            == 200
+        )
+        response = test_client.post("/api/v1/generate", json=valid_query_request)
+
+    assert response.status_code == 422
+    assert valid_query_request["text"] not in response.text
+
+
+def test_provider_success_and_transport_lifespan(
+    provider_settings: Settings, valid_query_request: dict[str, str]
+) -> None:
+    observed: list[httpx.Request] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        observed.append(request)
+        return httpx.Response(
+            200,
             json={
-                "text": "test",
-                "db_type": db_type,
-                "complexity": "simple",
-                "language": "ru",
+                "choices": [{"message": {"content": "SELECT id FROM users;\n\nList user IDs."}}],
+                "usage": {"total_tokens": 42},
             },
         )
 
-        assert response.status_code == 200
-        data = response.json()
-        assert "query" in data
+    transport = TrackingTransport(respond)
+    with TestClient(create_app(provider_settings, transport=transport)) as test_client:
+        for _ in range(2):
+            response = test_client.post("/api/v1/generate", json=valid_query_request)
+            assert response.status_code == 200
+            data = response.json()
+            assert data["query"] == "SELECT id FROM users;"
+            assert data["explanation"] == "List user IDs."
+            assert data["model"] == provider_settings.MODEL_NAME
+            assert data["tokens_used"] == 42
+
+        assert len(observed) == 2
+        for request in observed:
+            assert request.method == "POST"
+            assert str(request.url) == "https://provider.example/v1/chat/completions"
+            assert request.headers["Authorization"] == "Bearer synthetic-test-key"
+            forwarded = json.loads(request.content)
+            assert forwarded["model"] == provider_settings.MODEL_NAME
+            assert valid_query_request["text"] in forwarded["messages"][-1]["content"]
+        assert not transport.closed
+
+    assert transport.closed
 
 
-def test_generate_with_different_languages(client, mocker):
-    """Тест генерации на разных языках."""
-    languages = ["ru", "en"]
+@pytest.mark.parametrize(
+    ("provider_status", "provider_body"),
+    [
+        (429, {"detail": "private provider response"}),
+        (200, {"choices": []}),
+        (200, {"choices": [{"message": {"content": None}}]}),
+    ],
+)
+def test_provider_failure_has_safe_response(
+    provider_settings: Settings,
+    valid_query_request: dict[str, str],
+    provider_status: int,
+    provider_body: dict[str, object],
+) -> None:
+    def respond(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(provider_status, json=provider_body)
 
-    mock_response = mocker.Mock()
-    mock_response.status_code = 200
-    mock_response.json.return_value = {
-        "choices": [{"message": {"content": "Test query"}}]
-    }
+    transport = httpx.MockTransport(respond)
+    with TestClient(create_app(provider_settings, transport=transport)) as test_client:
+        response = test_client.post("/api/v1/generate", json=valid_query_request)
 
-    # Убираем with
-    mocker.patch("httpx.AsyncClient.post", return_value=mock_response)
+    assert response.status_code == 502
+    assert response.json()["detail"]
+    assert "private provider response" not in response.text
+    assert "synthetic-test-key" not in response.text
 
-    for language in languages:
-        response = client.post(
-            "/api/v1/generate",
-            json={
-                "text": "test query",
-                "db_type": "postgresql",
-                "complexity": "simple",
-                "language": language,
-            },
-        )
 
-        assert response.status_code == 200
+def test_provider_timeout_has_safe_response(
+    provider_settings: Settings, valid_query_request: dict[str, str]
+) -> None:
+    def fail(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("private timeout reason", request=request)
+
+    transport = httpx.MockTransport(fail)
+    with TestClient(create_app(provider_settings, transport=transport)) as test_client:
+        response = test_client.post("/api/v1/generate", json=valid_query_request)
+
+    assert response.status_code == 504
+    assert response.json()["detail"]
+    assert "private timeout reason" not in response.text
+
+
+def test_provider_body_is_bounded_and_closed(
+    provider_settings: Settings, valid_query_request: dict[str, str]
+) -> None:
+    class OversizedBody(httpx.AsyncByteStream):
+        closed: bool = False
+
+        async def __aiter__(self) -> AsyncIterator[bytes]:
+            for _ in range(17):
+                yield b"x" * (16 * 1024)
+            raise AssertionError("Provider read continued after exceeding the size limit")
+
+        async def aclose(self) -> None:
+            self.closed = True
+
+    body = OversizedBody()
+    transport = httpx.MockTransport(lambda _: httpx.Response(200, stream=body))
+    with TestClient(create_app(provider_settings, transport=transport)) as test_client:
+        response = test_client.post("/api/v1/generate", json=valid_query_request)
+
+    assert response.status_code == 502
+    assert body.closed

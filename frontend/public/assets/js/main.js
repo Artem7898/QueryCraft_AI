@@ -3,12 +3,12 @@ document.addEventListener('DOMContentLoaded', function() {
   console.log('✅ QueryCraft AI loaded');
 
   // Язык
-  let currentLang = localStorage.getItem('lang') || 'ru';
+  let currentLang = localStorage.getItem('lang') === 'en' ? 'en' : 'ru';
   document.getElementById('currentLang').textContent = currentLang.toUpperCase();
 
   // Применяем язык при загрузке
-  if (typeof changeLanguage === 'function') {
-    changeLanguage(currentLang);
+  if (typeof window.changeLanguage === 'function') {
+    window.changeLanguage(currentLang);
   }
 
   // Базовый URL API
@@ -65,8 +65,8 @@ document.addEventListener('DOMContentLoaded', function() {
     localStorage.setItem('lang', currentLang);
     document.getElementById('currentLang').textContent = currentLang.toUpperCase();
 
-    if (typeof changeLanguage === 'function') {
-      changeLanguage(currentLang);
+    if (typeof window.changeLanguage === 'function') {
+      window.changeLanguage(currentLang);
     }
 
     // Отправляем событие о смене языка
@@ -77,10 +77,10 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 
   // Карусель - добавим больше слайдов
-  if (typeof Swiper !== 'undefined') {
+  if (typeof window.Swiper !== 'undefined') {
     setTimeout(() => {
       try {
-        const swiper = new Swiper('.swiper', {
+        new window.Swiper('.swiper', {
           slidesPerView: 1,
           spaceBetween: 20,
           pagination: {
@@ -171,7 +171,9 @@ document.addEventListener('DOMContentLoaded', function() {
         let errorText = `HTTP error ${response.status}`;
         try {
           const errorData = await response.json();
-          errorText = errorData.detail || errorText;
+          if (typeof errorData.detail === 'string' && errorData.detail) {
+            errorText = errorData.detail;
+          }
         } catch {
           // Не удалось распарсить JSON
         }
@@ -179,19 +181,14 @@ document.addEventListener('DOMContentLoaded', function() {
       }
 
       const result = await response.json();
-      console.log('✅ Result received:', result);
-
       // Отображаем результат
-      document.getElementById('queryOutput').textContent = result.query;
+      highlightSQL(result.query);
       document.getElementById('explanation').textContent = result.explanation;
       document.getElementById('executionTime').textContent = currentLang === 'ru'
         ? `Время: ${result.executed_in} сек. | Модель: ${result.model}`
         : `Time: ${result.executed_in} sec. | Model: ${result.model}`;
 
       document.getElementById('result').classList.remove('hidden');
-
-      // Подсветка синтаксиса SQL
-      highlightSQL(result.query);
 
       // Прокручиваем к результату
       setTimeout(() => {
@@ -268,23 +265,32 @@ document.addEventListener('DOMContentLoaded', function() {
       'ELSE', 'END', 'ASC', 'DESC'
     ];
 
-    let highlighted = sql;
+    const tokenPattern = new RegExp([
+      /(?<comment>--[^\r\n]*)/.source,
+      /(?<string>'(?:''|[^'])*')/.source,
+      `(?<keyword>\\b(?:${keywords.join('|')})\\b)`,
+      /(?<number>\b\d+\b)/.source
+    ].join('|'), 'gi');
+    const classes = {
+      comment: 'text-gray-500 italic',
+      string: 'text-green-600',
+      keyword: 'text-purple-600 font-semibold',
+      number: 'text-blue-600'
+    };
 
-    keywords.forEach(keyword => {
-      const regex = new RegExp(`\\b${keyword}\\b`, 'gi');
-      highlighted = highlighted.replace(regex, `<span class="text-purple-600 font-semibold">${keyword}</span>`);
-    });
-
-    // Комментарии
-    highlighted = highlighted.replace(/--.*$/gm, '<span class="text-gray-500 italic">$&</span>');
-
-    // Строки
-    highlighted = highlighted.replace(/'[^']*'/g, '<span class="text-green-600">$&</span>');
-
-    // Числа
-    highlighted = highlighted.replace(/\b\d+\b/g, '<span class="text-blue-600">$&</span>');
-
-    pre.innerHTML = highlighted;
+    const fragment = document.createDocumentFragment();
+    let offset = 0;
+    for (const match of sql.matchAll(tokenPattern)) {
+      fragment.append(sql.slice(offset, match.index));
+      const span = document.createElement('span');
+      const token = Object.keys(classes).find(key => match.groups[key] !== undefined);
+      span.className = classes[token];
+      span.textContent = match[0];
+      fragment.append(span);
+      offset = match.index + match[0].length;
+    }
+    fragment.append(sql.slice(offset));
+    pre.replaceChildren(fragment);
   }
 
   // Функция показа уведомлений
@@ -398,34 +404,4 @@ document.addEventListener('DOMContentLoaded', function() {
   document.addEventListener('themeChanged', (e) => {
     console.log(`🎨 Theme changed to: ${e.detail.theme}`, e.detail.themeData);
   });
-});
-
-// assets/js/main.js
-import * as Sentry from "@sentry/react";
-import { BrowserTracing } from "@sentry/tracing";
-
-// Инициализация Sentry
-if (process.env.NODE_ENV === 'production') {
-  Sentry.init({
-    dsn: "https://your-dsn.ingest.sentry.io/your-project-id",
-    integrations: [new BrowserTracing()],
-    tracesSampleRate: 0.2,
-    environment: process.env.NODE_ENV,
-    beforeSend(event) {
-      // Фильтрация чувствительных данных
-      if (event.request) {
-        delete event.request.cookies;
-        delete event.request.headers['Authorization'];
-      }
-      return event;
-    }
-  });
-}
-
-// Глобальный обработчик ошибок
-window.addEventListener('error', (event) => {
-  if (Sentry.getCurrentHub().getClient()) {
-    Sentry.captureException(event.error);
-  }
-  console.error('Global error:', event.error);
-});
+}, { once: true });

@@ -320,7 +320,7 @@ class ThemeSwitcher {
     }
 
     // Обработчик изменения языка
-    document.addEventListener('languageChanged', (e) => {
+    document.addEventListener('languageChanged', () => {
       this.updateButtonText(this.currentTheme);
     });
   }

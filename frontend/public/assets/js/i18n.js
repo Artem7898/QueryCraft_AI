@@ -1,5 +1,3 @@
-[file name]: i18n.js
-[file content begin]
 const translations = {
   ru: {
     title: "QueryCraft AI",
@@ -72,7 +70,7 @@ const translations = {
 };
 
 // Глобальная переменная для текущего языка
-let currentLang = localStorage.getItem('lang') || 'ru';
+let currentLang = localStorage.getItem('lang') === 'en' ? 'en' : 'ru';
 
 // Функция для получения перевода
 function t(key) {
@@ -81,9 +79,9 @@ function t(key) {
 
 // Функция смены языка
 function changeLanguage(lang) {
-  currentLang = lang;
-  localStorage.setItem('lang', lang);
-  document.documentElement.lang = lang;
+  currentLang = lang === 'en' ? 'en' : 'ru';
+  localStorage.setItem('lang', currentLang);
+  document.documentElement.lang = currentLang;
 
   // Обновляем весь текст на странице
   document.querySelectorAll('[data-i18n]').forEach(el => {
@@ -110,10 +108,10 @@ function changeLanguage(lang) {
   // Обновляем кнопку языка
   const langBtn = document.getElementById('currentLang');
   if (langBtn) {
-    langBtn.textContent = lang.toUpperCase();
+    langBtn.textContent = currentLang.toUpperCase();
   }
 
-  console.log(`Язык изменен на: ${lang}`);
+  window.currentLang = currentLang;
 }
 
 // Инициализация языка при загрузке
@@ -126,4 +124,3 @@ document.addEventListener('DOMContentLoaded', () => {
 window.t = t;
 window.changeLanguage = changeLanguage;
 window.currentLang = currentLang;
-[file content end]

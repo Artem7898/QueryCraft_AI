@@ -1,29 +1,33 @@
-import requests
-import json
+"""Check CORS against the running local API."""
 
-# Тест POST запроса
-url = "http://localhost:8000/api/v1/generate"
-headers = {"Content-Type": "application/json", "Origin": "http://localhost:3000"}
-data = {
-    "text": "тестовый запрос",
-    "db_type": "postgresql",
-    "complexity": "simple",
-    "language": "ru",
-}
+import httpx
 
-try:
-    # Сначала OPTIONS (preflight)
-    print("Testing OPTIONS request...")
-    resp = requests.options(url, headers=headers)
-    print(f"OPTIONS Status: {resp.status_code}")
-    print(f"OPTIONS Headers: {dict(resp.headers)}")
 
-    # Затем POST
-    print("\nTesting POST request...")
-    resp = requests.post(url, headers=headers, json=data)
-    print(f"POST Status: {resp.status_code}")
-    print(f"POST Headers: {dict(resp.headers)}")
-    print(f"POST Body: {resp.text}")
+def main() -> None:
+    """Validate the expected local preflight and offline generation response."""
+    origin = "http://localhost:3000"
+    with httpx.Client(base_url="http://127.0.0.1:8000", timeout=5.0) as client:
+        preflight = client.options(
+            "/api/v1/generate",
+            headers={
+                "Origin": origin,
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type",
+            },
+        )
+        preflight.raise_for_status()
+        assert preflight.headers["access-control-allow-origin"] == origin
 
-except Exception as e:
-    print(f"Error: {e}")
+        response = client.post(
+            "/api/v1/generate",
+            headers={"Origin": origin},
+            json={"text": "Show active users", "language": "en"},
+        )
+        response.raise_for_status()
+        assert response.headers["access-control-allow-origin"] == origin
+        assert "FROM users" in response.json()["query"]
+        print("CORS and offline generation passed")
+
+
+if __name__ == "__main__":
+    main()

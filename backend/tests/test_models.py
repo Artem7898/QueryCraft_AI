@@ -1,50 +1,56 @@
 import pytest
 from pydantic import ValidationError
 
+from app.models.schemas import Complexity, DatabaseType, QueryRequest, QueryResponse
 
-def test_query_request_validation():
-    """Тест валидации модели запроса."""
-    from app.api.v1.endpoints.query import QueryRequest
 
-    # Валидные данные
-    valid_data = {
-        "text": "Найти активных пользователей",
-        "db_type": "postgresql",
-        "complexity": "simple",
-        "language": "ru",
-    }
+def test_query_request_normalizes_text_and_preserves_defaults() -> None:
+    request = QueryRequest(text="  Show users  ")
 
-    request = QueryRequest(**valid_data)
-    assert request.text == valid_data["text"]
-    assert request.db_type == valid_data["db_type"]
-    assert request.complexity == valid_data["complexity"]
-    assert request.language == valid_data["language"]
+    assert request.text == "Show users"
+    assert request.db_type is DatabaseType.POSTGRESQL
+    assert request.complexity is Complexity.MEDIUM
+    assert request.language == "ru"
 
-    # Невалидные данные
-    invalid_data = {
-        "text": "",  # Пустой текст
-        "db_type": "invalid_db",  # Неподдерживаемый тип БД
-        "complexity": "invalid",
-        "language": "fr",  # Неподдерживаемый язык
-    }
 
+@pytest.mark.parametrize("length", [3, 1000])
+def test_query_request_inclusive_length_limits(length: int) -> None:
+    assert len(QueryRequest(text=" " + "x" * length + " ").text) == length
+
+
+@pytest.mark.parametrize("text", ["  xx  ", "x" * 1001, "sample\0text"])
+def test_query_request_rejects_invalid_text(text: str) -> None:
     with pytest.raises(ValidationError):
-        QueryRequest(**invalid_data)
+        QueryRequest(text=text)
 
 
-def test_query_response_model():
-    """Тест модели ответа."""
-    from app.api.v1.endpoints.query import QueryResponse
+def test_query_response_preserves_wire_types() -> None:
+    response = QueryResponse(
+        query="SELECT id FROM users;",
+        explanation="List user IDs.",
+        model="test-model",
+        executed_in=1.5,
+    )
 
-    response_data = {
-        "query": "SELECT * FROM users;",
-        "explanation": "Select all users",
-        "model": "gpt-3.5-turbo",
+    assert response.model_dump(mode="json") == {
+        "query": "SELECT id FROM users;",
+        "explanation": "List user IDs.",
+        "model": "test-model",
         "executed_in": 1.5,
+        "tokens_used": None,
     }
 
-    response = QueryResponse(**response_data)
-    assert response.query == response_data["query"]
-    assert response.explanation == response_data["explanation"]
-    assert response.model == response_data["model"]
-    assert response.executed_in == response_data["executed_in"]
+
+@pytest.mark.parametrize(
+    ("executed_in", "tokens_used"),
+    [(float("inf"), 1), (float("nan"), 0), (-1.0, 0), (0.0, -1)],
+)
+def test_query_response_rejects_invalid_metrics(executed_in: float, tokens_used: int) -> None:
+    with pytest.raises(ValidationError):
+        QueryResponse(
+            query="SELECT 1;",
+            explanation="Return a constant.",
+            model="test-model",
+            executed_in=executed_in,
+            tokens_used=tokens_used,
+        )

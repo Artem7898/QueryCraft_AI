@@ -14,7 +14,7 @@ describe('Analytics Integration', () => {
 
   test('should initialize analytics functions', () => {
     // Проверяем, что файл существует и экспортирует функции
-    const analytics = require('../../assets/js/analytics');
+    const analytics = require('../../public/assets/js/analytics');
 
     expect(typeof analytics.initAnalytics).toBe('function');
     expect(typeof analytics.trackSQLGeneration).toBe('function');
@@ -25,7 +25,7 @@ describe('Analytics Integration', () => {
   });
 
   test('should track SQL generation events without errors', () => {
-    const analytics = require('../../assets/js/analytics');
+    const analytics = require('../../public/assets/js/analytics');
 
     // Проверяем вызов функции отслеживания
     analytics.trackSQLGeneration('complex', false);

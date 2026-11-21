@@ -1,3 +1,8 @@
+/* Keep modal and result visibility working when the Tailwind CDN is unavailable. */
+.hidden {
+  display: none;
+}
+
 /* CSS Custom Properties для 5 тем */
 :root {
   --color-bg: #ffffff;

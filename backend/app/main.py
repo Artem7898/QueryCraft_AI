@@ -1,103 +1,122 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
-from app.config import settings
-from app.api.v1.endpoints import query
-from app.services.ai_service import ai_service
-import logging
+"""FastAPI application factory and process lifecycle."""
 
-# Настройка логирования
-logging.basicConfig(
-    level=logging.INFO if not settings.DEBUG else logging.DEBUG,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
+import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from typing import TypedDict
+
+import httpx
+from fastapi import FastAPI, Request, status
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+from app.api.v1.endpoints import query
+from app.config import Settings
+from app.runtime import RateLimiter, Runtime
+from app.services.ai_service import AIService, ProviderError, ProviderTimeoutError
+
 logger = logging.getLogger(__name__)
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """
-    Управление жизненным циклом приложения
-    """
-    # Startup
-    logger.info("Starting QueryCraft AI API...")
+class LifespanState(TypedDict):
+    """Resources copied into each request's ASGI state."""
 
-    if not settings.BYTEZ_API_KEY:
-        logger.error("BYTEZ_API_KEY is not set!")
-        raise ValueError("BYTEZ_API_KEY не установлен")
-
-    logger.info(f"Using model: {settings.MODEL_NAME}")
-    logger.info("API started successfully")
-
-    yield
-
-    # Shutdown
-    logger.info("Shutting down QueryCraft AI API...")
-    await ai_service.close()
+    runtime: Runtime
 
 
-app = FastAPI(
-    title="QueryCraft AI API",
-    description="API для генерации SQL-запросов с помощью AI",
-    version="1.0.0",
-    lifespan=lifespan,
-    docs_url="/api/docs",
-    redoc_url="/api/redoc",
-)
+def create_app(
+    settings: Settings | None = None,
+    *,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> FastAPI:
+    """Build the API, optionally providing the outbound HTTP transport."""
+    config = settings if settings is not None else Settings()
 
-# CORS middleware - ВАЖНО: добавить ДО всех маршрутов
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.ALLOWED_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"],
-    allow_headers=[
-        "Content-Type",
-        "Authorization",
-        "Accept",
-        "Origin",
-        "X-Requested-With",
-        "Access-Control-Allow-Headers",
-        "Access-Control-Request-Method",
-        "Access-Control-Request-Headers",
-    ],
-    expose_headers=["Content-Disposition"],
-    max_age=600,  # 10 минут кэширования preflight запросов
-)
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[LifespanState]:
+        limits = httpx.Limits(
+            max_connections=min(20, config.MAX_REQUESTS_PER_MINUTE),
+            max_keepalive_connections=min(10, config.MAX_REQUESTS_PER_MINUTE),
+        )
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(config.API_TIMEOUT),
+            limits=limits,
+            transport=transport,
+        ) as client:
+            yield {
+                "runtime": Runtime(
+                    AIService(config, client),
+                    RateLimiter(config.MAX_REQUESTS_PER_MINUTE),
+                    config.MAX_QUERY_LENGTH,
+                ),
+            }
+
+    application = FastAPI(
+        title=f"{config.APP_NAME} API",
+        description="Генерация текста SQL и NoSQL запросов",
+        version="1.0.0",
+        lifespan=lifespan,
+        docs_url="/api/docs",
+        redoc_url="/api/redoc",
+    )
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=config.ALLOWED_ORIGINS,
+        allow_methods=["GET", "POST"],
+        allow_headers=["Content-Type", "Accept"],
+        max_age=600,
+    )
+    application.include_router(query.router, prefix="/api/v1", tags=["query"])
+
+    @application.exception_handler(RequestValidationError)
+    async def invalid_request(_: Request, exc: RequestValidationError) -> JSONResponse:
+        # Only report known locations: unexpected JSON keys can contain user data.
+        error_details = []
+        for error in exc.errors():
+            location = error["loc"]
+            if error["type"] == "extra_forbidden":
+                location = location[:-1]
+            error_details.append(
+                {
+                    "loc": location,
+                    "type": error["type"],
+                    "msg": error["msg"],
+                }
+            )
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            content={"detail": error_details},
+        )
+
+    @application.exception_handler(ProviderError)
+    async def upstream_error(_: Request, exc: ProviderError) -> JSONResponse:
+        if isinstance(exc, ProviderTimeoutError):
+            logger.warning("Query generation provider timed out")
+            return JSONResponse(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                content={"detail": "Generation provider timed out"},
+            )
+        logger.warning("Query generation provider failed")
+        return JSONResponse(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            content={"detail": "Generation provider failed"},
+        )
+
+    @application.get("/")
+    async def root() -> dict[str, str]:
+        return {
+            "message": "QueryCraft AI API",
+            "version": "1.0.0",
+            "docs": "/api/docs",
+            "health": "/api/v1/health",
+        }
+
+    @application.get("/health")
+    async def health() -> dict[str, str]:
+        return {"status": "healthy", "service": "QueryCraft AI"}
+
+    return application
 
 
-# Middleware для логирования запросов
-@app.middleware("http")
-async def log_requests(request, call_next):
-    logger.info(f"Request: {request.method} {request.url}")
-    logger.info(f"Headers: {dict(request.headers)}")
-
-    response = await call_next(request)
-
-    logger.info(f"Response status: {response.status_code}")
-    return response
-
-
-# Подключаем роутеры
-app.include_router(query.router, prefix="/api/v1", tags=["query"])
-
-
-@app.get("/")
-async def root():
-    return {
-        "message": "QueryCraft AI API",
-        "version": "1.0.0",
-        "docs": "/api/docs",
-        "health": "/api/v1/health",
-    }
-
-
-@app.get("/health")
-async def health():
-    return {"status": "healthy", "service": "QueryCraft AI"}
-
-
-# Явно обрабатываем OPTIONS запросы для всех маршрутов
-#@app.options("/api/v1/{path:path}")
-#async def options_handler(path: str):
-#    return {"message": "CORS preflight OK"}
+app = create_app()

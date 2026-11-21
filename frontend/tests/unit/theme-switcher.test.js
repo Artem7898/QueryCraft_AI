@@ -1,69 +1,31 @@
-/**
- * @jest-environment jsdom
- */
+beforeEach(() => {
+  jest.useFakeTimers();
+  jest.resetModules();
+  document.body.innerHTML = '<button id="themeBtn">Switch Theme</button>';
+});
 
-// Сначала создаем DOM, потом мокаем
-const mockModule = () => {
-  let currentTheme = 'light';
-  const themes = ['light', 'dark', 'transformative-teal'];
+afterEach(() => {
+  jest.useRealTimers();
+});
 
-  return {
-    initThemeSwitcher: jest.fn((buttonId) => {
-      const button = document.getElementById(buttonId);
-      if (button) {
-        button.addEventListener('click', () => {
-          const currentIndex = themes.indexOf(currentTheme);
-          currentTheme = themes[(currentIndex + 1) % themes.length];
-          document.documentElement.setAttribute('data-theme', currentTheme);
-          localStorage.setItem('theme', currentTheme);
-        });
-      }
-    }),
-    switchTheme: jest.fn(() => {
-      const currentIndex = themes.indexOf(currentTheme);
-      currentTheme = themes[(currentIndex + 1) % themes.length];
-      return currentTheme;
-    }),
-    getCurrentTheme: jest.fn(() => currentTheme)
-  };
-};
+test('initializes from the saved theme', () => {
+  localStorage.setItem('theme', 'verdant-green');
+  require('../../public/assets/js/theme-switcher.js');
 
-// Мокаем модуль
-jest.mock('../../assets/js/theme-switcher.js', () => mockModule());
+  expect(document.documentElement).toHaveAttribute('data-theme', 'verdant-green');
+  expect(document.getElementById('themeSelector')).toHaveClass('hidden');
+});
 
-describe('Theme Switcher', () => {
-  let themeModule;
+test('opens the theme selector, applies the selected theme and saves it', () => {
+  require('../../public/assets/js/theme-switcher.js');
 
-  beforeEach(() => {
-    document.body.innerHTML = `
-      <html data-theme="light">
-        <button id="themeBtn">Switch Theme</button>
-      </html>
-    `;
+  const selector = document.getElementById('themeSelector');
+  document.getElementById('themeBtn').click();
+  expect(selector).not.toHaveClass('hidden');
+  selector.querySelector('button[data-theme="dark"]').click();
 
-    // Сбрасываем модуль
-    jest.resetModules();
-    themeModule = require('../../assets/js/theme-switcher.js');
-  });
-
-  test('should initialize theme switcher', () => {
-    themeModule.initThemeSwitcher('themeBtn');
-    expect(themeModule.initThemeSwitcher).toHaveBeenCalledWith('themeBtn');
-  });
-
-  test('should switch themes', () => {
-    const html = document.documentElement;
-
-    // Проверяем начальную тему
-    expect(html.getAttribute('data-theme')).toBe('light');
-
-    // Симулируем клик через функцию
-    const themeBtn = document.getElementById('themeBtn');
-    if (themeModule.initThemeSwitcher.mock.calls.length > 0) {
-      // Если initThemeSwitcher был вызван, кнопка должна иметь обработчик
-      themeBtn.click();
-      // Проверяем, что тема изменилась
-      expect(html.getAttribute('data-theme')).toBe('dark');
-    }
-  });
+  expect(document.documentElement).toHaveAttribute('data-theme', 'dark');
+  expect(localStorage.getItem('theme')).toBe('dark');
+  jest.advanceTimersByTime(300);
+  expect(selector).toHaveClass('hidden');
 });

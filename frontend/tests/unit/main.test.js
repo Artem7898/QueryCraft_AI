@@ -1,97 +1,117 @@
-/**
- * @jest-environment jsdom
- */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { waitFor } from '@testing-library/dom';
+import fetchMock from 'jest-fetch-mock';
 
-// Мокаем внешние модули
-jest.mock('../../assets/js/analytics', () => ({
-  initAnalytics: jest.fn(),
-  trackSQLGeneration: jest.fn()
-}));
+const html = readFileSync(join(__dirname, '../../public/index.html'), 'utf8');
+const body = new DOMParser().parseFromString(html, 'text/html').body.innerHTML;
+const generateUrl = 'http://localhost:8000/api/v1/generate';
 
-describe('Main Application', () => {
-  let mainModule;
+function submitQuery(text) {
+  document.getElementById('queryInput').value = text;
+  document.getElementById('queryForm').dispatchEvent(new Event('submit', { cancelable: true }));
+}
 
-  beforeEach(() => {
-    jest.useFakeTimers();
+beforeEach(() => {
+  jest.useFakeTimers();
+  jest.resetModules();
+  document.body.innerHTML = body;
+  document.getElementById('result').scrollIntoView = jest.fn();
+  fetchMock.mockResponseOnce(JSON.stringify({ status: 'healthy' }));
+  require('../../public/assets/js/i18n.js');
+  require('../../public/assets/js/main.js');
+  document.dispatchEvent(new Event('DOMContentLoaded'));
+});
 
-    // Создаем DOM для тестов
-    document.body.innerHTML = `
-      <div class="app-container">
-        <header>
-          <div id="currentLang">RU</div>
-          <button id="langBtn">EN</button>
-          <button id="openModal">Open</button>
-        </header>
+afterEach(() => {
+  jest.useRealTimers();
+});
 
-        <main>
-          <form id="queryForm">
-            <textarea id="queryInput" maxlength="500"></textarea>
-            <div id="charCount">0/500</div>
-            <button type="submit">Generate</button>
-          </form>
+test('opens and closes the query modal', () => {
+  const modal = document.getElementById('queryModal');
+  expect(modal).toHaveClass('hidden');
+  document.getElementById('openModal').click();
+  expect(modal).not.toHaveClass('hidden');
+  document.getElementById('closeModal').click();
+  jest.advanceTimersByTime(300);
+  expect(modal).toHaveClass('hidden');
+});
 
-          <div id="queryModal" class="hidden">
-            <button id="closeModal">×</button>
-          </div>
-        </main>
-      </div>
-    `;
+test('keeps the modal open during input and closes it with Escape', () => {
+  const modal = document.getElementById('queryModal');
+  const input = document.getElementById('queryInput');
+  document.getElementById('openModal').click();
+  input.click();
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  expect(modal).not.toHaveClass('hidden');
 
-    jest.resetModules();
-    mainModule = require('../../assets/js/main.js');
-  });
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  jest.advanceTimersByTime(300);
+  expect(modal).toHaveClass('hidden');
+});
 
-  afterEach(() => {
-    jest.useRealTimers();
-  });
+test('updates the character count and switches the language', () => {
+  const input = document.getElementById('queryInput');
+  input.value = 'Show active users';
+  input.dispatchEvent(new Event('input'));
+  expect(document.getElementById('charCount')).toHaveTextContent('17');
 
-  test('should initialize without errors', () => {
-    if (mainModule.init) {
-      expect(() => mainModule.init()).not.toThrow();
-    }
-  });
+  document.getElementById('langBtn').click();
+  expect(document.documentElement.lang).toBe('en');
+  expect(document.getElementById('currentLang')).toHaveTextContent('EN');
+});
 
-  test('should update character counter on input', () => {
-    const textarea = document.getElementById('queryInput');
-    const charCount = document.getElementById('charCount');
+test('asks for a non-empty description without sending it', () => {
+  document.getElementById('langBtn').click();
+  submitQuery(' \t ');
+  expect(document.body).toHaveTextContent('Please describe your query');
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+});
 
-    // Вызываем функцию обновления счетчика
-    textarea.value = 'SELECT * FROM users';
-    if (mainModule.updateCharCounter) {
-      mainModule.updateCharCounter();
-      expect(charCount.textContent).toContain('19');
-    }
-  });
+test('submits the description and displays generated SQL as exact highlighted text', async () => {
+  const sql = "select '<note>draft</note>' from reports where total > 12 -- sample\n";
+  fetchMock.mockResponseOnce(JSON.stringify({
+    query: sql,
+    explanation: 'Example query',
+    executed_in: 0.1,
+    model: 'test'
+  }));
 
-  test('should open and close modal', () => {
-    const modal = document.getElementById('queryModal');
-    const openBtn = document.getElementById('openModal');
-    const closeBtn = document.getElementById('closeModal');
+  submitQuery('Show reports');
 
-    // Открываем модальное окно
-    openBtn.click();
-    expect(modal.classList.contains('hidden')).toBe(false);
+  await waitFor(() => expect(document.getElementById('queryOutput').textContent).toBe(sql));
+  const output = document.getElementById('queryOutput');
+  expect(output.querySelector('note')).toBeNull();
+  expect(output.querySelector('.font-semibold')).toHaveTextContent('select');
+  expect(output.querySelector('.text-blue-600')).toHaveTextContent('12');
+  expect(output.querySelector('.italic')).toHaveTextContent('-- sample');
+  expect(fetchMock).toHaveBeenCalledWith(generateUrl, expect.objectContaining({
+    method: 'POST',
+    body: JSON.stringify({
+      text: 'Show reports',
+      db_type: 'postgresql',
+      complexity: 'simple',
+      language: 'ru'
+    })
+  }));
+  document.getElementById('copyBtn').click();
+  expect(navigator.clipboard.writeText).toHaveBeenCalledWith(sql);
+  await waitFor(() => expect(document.getElementById('copyBtn')).toHaveTextContent('Скопировано'));
+});
 
-    // Закрываем модальное окно
-    closeBtn.click();
-    expect(modal.classList.contains('hidden')).toBe(true);
-  });
+test('shows a network error and re-enables submission', async () => {
+  document.getElementById('langBtn').click();
+  fetchMock.mockRejectOnce(new Error('Connection unavailable'));
+  submitQuery('Show reports');
+  await waitFor(() => expect(document.getElementById('queryOutput')).toHaveTextContent('Connection unavailable'));
+  expect(document.getElementById('explanation')).toHaveTextContent('Check backend connection.');
+  expect(document.querySelector('#queryForm button[type="submit"]')).toBeEnabled();
+});
 
-  test('should handle form submission', () => {
-    const form = document.getElementById('queryForm');
-
-    // Мокаем fetch
-    global.fetch = jest.fn(() =>
-      Promise.resolve({
-        ok: true,
-        json: () => Promise.resolve({ query: 'SELECT 1' })
-      })
-    );
-
-    // Отправляем форму
-    form.dispatchEvent(new Event('submit'));
-
-    // Проверяем, что fetch был вызван
-    expect(global.fetch).toHaveBeenCalled();
-  });
+test('uses the HTTP status when the server returns structured validation details', async () => {
+  fetchMock.mockResponseOnce(JSON.stringify({
+    detail: [{ msg: 'Invalid value', loc: ['body', 'text'] }]
+  }), { status: 422 });
+  submitQuery('Show reports');
+  await waitFor(() => expect(document.getElementById('queryOutput')).toHaveTextContent('HTTP error 422'));
 });
