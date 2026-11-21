@@ -23,12 +23,12 @@ The form offers **Simple**, **Medium**, and **Advanced** complexity. In live mod
 
 | Mode | How it works | Use it for |
 | --- | --- | --- |
-| Live (default) | The API sends your description, optional schema, and generation instructions to Bytez, then checks the returned syntax for the selected dialect. | Working with your own descriptions and requesting more specific queries. Requires a Bytez key on the server. |
-| Demo (opt-in) | The API selects from built-in examples, including users, orders, and a generic query. It uses no external model call. | Trying the interface and checking the API locally without a Bytez key. |
+| Live (default) | The API sends your description, optional schema, and generation instructions to the selected provider, then checks the returned syntax for the selected dialect. Choose Bytez, OpenAI, or local Ollama. | Working with your own descriptions. Use Ollama when you want to run a model on your machine without an API key. |
+| Demo (opt-in) | The API selects from built-in examples, including users, orders, and a generic query. | Trying the interface with predefined outputs. |
 
-The demo returns templates for the selected dialect. For example, a prompt about users returns a built-in users query even if you ask for a different age threshold or ordering. The interface labels templates as demo examples. If the key is missing in live mode, the API reports that generation is unavailable.
+The demo returns templates for the selected dialect. For example, a prompt about users returns a built-in users query even if you ask for a different age threshold or ordering. The interface labels templates as demo examples and shows the provider and model for live results.
 
-[Start the local demo](../README.md#run-locally) · [Configure live generation](../README.md#configuration)
+[Run the application](../README.md#run-locally) · [Choose and configure a provider](providers.md)
 
 ## From a question to a draft
 
@@ -51,7 +51,7 @@ The examples show how to supply schema context and describe output precisely. Li
 
 The syntax check can reject invalid output before it reaches the form. Verify identifiers, database-version features, permissions, and performance in your own environment. QueryCraft AI works with the schema details you supply in the form, and execution and results stay in your database tools.
 
-In live mode, the description and schema context are sent to Bytez. Use schema names and synthetic values where possible, and keep credentials or sensitive records out of prompts. The Bytez key belongs in backend configuration.
+With Bytez or OpenAI, the selected provider receives the description and schema context. With Ollama on the API host, those model requests stay on that machine. Use schema names and synthetic values where possible, and keep credentials or sensitive records out of prompts.
 
 ## Technical documentation
 

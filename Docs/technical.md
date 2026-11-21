@@ -2,7 +2,7 @@
 
 **English** · [Русский](technical_RU.md)
 
-[Project guide](README.md) · [Quick start and HTTP API](../README.md)
+[Project guide](README.md) · [Generation providers](providers.md) · [Quick start and HTTP API](../README.md)
 
 ## Runtime
 
@@ -38,12 +38,14 @@ the client and its connections. [Application factory](../backend/app/main.py)
    Live mode sends the description and any supplied schema context in the user
    message. The selected dialect, complexity, and explanation instructions go
    in the system message. HTTPX posts
-   the resulting payload to `/chat/completions` under the configured Bytez base URL.
+   the resulting payload to the selected provider's OpenAI-compatible
+   `/chat/completions` endpoint. OpenAI uses `max_completion_tokens`, while
+   Bytez and Ollama use `max_tokens`.
    [Generation service](../backend/app/services/ai_service.py)
 5. The service extracts the first completion and checks its syntax with SQLGlot
    for PostgreSQL, MySQL, and SQLite, or with the JavaScript parser and a MongoDB
    shell structure check for MongoDB. The response includes `source` (`live`
-   or `demo`) alongside the query and generation metadata. The browser renders
+   or `demo`) and the provider name for generated results. The browser renders
    query tokens and the explanation as text.
    [Generation service](../backend/app/services/ai_service.py)
    [Dialect validation](../backend/app/services/query_validation.py)
@@ -59,18 +61,21 @@ API process's working directory. Environment variables take precedence. Use
 | Setting or limit | Default | Behavior |
 | --- | --- | --- |
 | `GENERATION_MODE` | `live` | Developers can explicitly select `demo` for local examples. |
-| `BYTEZ_API_KEY` | Unset | Live mode requires a key. The legacy value `your_api_key_here` explicitly selects demo mode. |
+| `GENERATION_PROVIDER` | `bytez` | Set to `bytez`, `openai`, or `ollama`. |
+| `BYTEZ_API_KEY` | Unset | Key for Bytez. The legacy value `your_api_key_here` selects demo mode when Bytez is configured. |
+| `QUERYCRAFT_OPENAI_API_KEY` / `OPENAI_API_KEY` | Unset | Key for OpenAI. The scoped variable takes precedence. |
 | `BYTEZ_API_URL` | `https://api.bytez.com/models/v2/openai/v1` | Requires HTTPS with a host. Embedded credentials, query strings, and fragments are rejected. |
-| `MODEL_NAME` | `Qwen/Qwen2-7B-Instruct` | The model identifier sent to Bytez and reported by the API. |
+| `OLLAMA_API_URL` | `http://127.0.0.1:11434/v1` | HTTP allowed for loopback only. Remote hosts require HTTPS. |
+| `MODEL_NAME` | Provider default | Model identifier sent to the selected provider and reported by the API. |
 | `API_TIMEOUT` | 30 seconds | Accepts 5–120 seconds. Covers the outbound request and reading the response. |
 | `ALLOWED_ORIGINS` | Local origins on ports 3000 and 8000 | Accepts a JSON array or comma-separated origins. Each entry includes a scheme and host, plus a port when needed. |
 | `MAX_QUERY_LENGTH` | 1,000 characters | Allows a maximum from 3 to 1,000 characters after trimming whitespace. |
 | `MAX_REQUESTS_PER_MINUTE` | 60 | Shared by all generation callers in each worker. Health routes and CORS preflight bypass this quota. |
-| `ENVIRONMENT` / `DEBUG` | `development` / `false` | Startup validation requires a live credential and disables debug configuration in production. |
+| `ENVIRONMENT` / `DEBUG` | `development` / `false` | Production requires live generation and disabled debug configuration. Bytez and OpenAI require keys. |
 | `APP_NAME` | `QueryCraft AI` | Prefix used in the OpenAPI title. |
 | Schema context | Optional | Up to 3,000 characters after trimming whitespace. |
 | Inbound generation body | 64 KiB | Fixed cap on bytes seen by the generation route. |
-| Bytez response body | 256 KiB | Fixed cap on the streamed body. Bytez receives a request for identity encoding. |
+| Provider response body | 256 KiB | Fixed cap on the streamed body. The client requests identity encoding. |
 
 ## Errors and application boundaries
 
@@ -79,15 +84,17 @@ API process's working directory. Environment variables take precedence. Use
 | `413` | The generation body exceeded its byte limit. | Reduce the JSON payload. |
 | `422` | JSON or a field failed validation. | Check the returned field location and the OpenAPI schema. |
 | `429` | The worker's generation window is full. | Use the `Retry-After` value before retrying. |
-| `502` | Bytez failed, or the response format or generated syntax was invalid. | Check the provider and reproduce with a synthetic description for the selected dialect. |
-| `503` | The server has no key for live generation. | Configure `BYTEZ_API_KEY` in the server environment and restart the API. |
-| `504` | A Bytez timeout or the outbound deadline expired. | Check connectivity and `API_TIMEOUT`. |
+| `502` | The provider failed, or the response format or generated syntax was invalid. | Check the selected service and model. With Ollama, confirm the service is running and the model is installed. |
+| `503` | The selected cloud provider's key is missing. | Configure its key in the server environment and restart the API. |
+| `504` | The outbound provider deadline expired. | Check connectivity and `API_TIMEOUT`, especially on first use of a local model. |
 
 Public validation errors omit input values. Provider failures use fixed
 messages, and the versioned health response reports the configured model and
-API readiness without testing Bytez. The key stays on the backend. Live
-generation sends the description and supplied schema context to Bytez. A
-parser checks syntax without a database connection. The API returns query text,
+API readiness without contacting the provider. The client sends the description
+and supplied schema context to the selected provider. Authorization is sent
+only to the selected cloud provider. Loopback Ollama connections ignore proxy
+settings from the environment. A parser checks syntax without a database
+connection. The API returns query text,
 and reviewing it against the intended schema remains the caller's responsibility.
 [Error responses and health](../backend/app/main.py)
 [Provider request](../backend/app/services/ai_service.py)
@@ -112,9 +119,10 @@ from external CDNs. [Main script](../frontend/public/assets/js/main.js)
 Run the backend tests, Ruff lint and format checks, mypy, and the frontend Jest
 and ESLint checks using the commands in the quick start. The backend suite
 covers strict validation, CORS, request size and rate limiting under concurrent
-calls. Mock transport tests cover Bytez success, timeout, malformed output, and
-response-size limits. A live Bytez check requires a configured credential and
-network access. [Development commands](../README.md#development-checks)
+calls. Mock transport tests cover provider selection, authorization, timeouts,
+malformed output, and response-size limits. For an integration check, run a
+local model or configure credentials and egress for a cloud service.
+[Development commands](../README.md#development-checks)
 [Backend tests](../backend/tests/)
 [Frontend tests](../frontend/tests/)
 
@@ -130,7 +138,8 @@ network access. [Development commands](../README.md#development-checks)
 - If the page loads without styling or the carousel, inspect the CDN requests
   in DevTools and verify that the browser can reach the required hosts.
   [External assets](../frontend/public/index.html)
-- If the form shows a demo example, check `GENERATION_MODE` and remove any old
-  demo key override. Restart after loading the live key. If the API cannot start
-  in production, check the generation mode, key, and debug settings.
+- If the form shows a demo example, check `GENERATION_MODE` and any legacy
+  Bytez demo key. Restart after selecting the intended provider. If production
+  startup fails, check the generation mode, debug configuration, and any
+  required cloud key.
   [Configuration](../README.md#configuration)

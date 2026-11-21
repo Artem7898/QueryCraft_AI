@@ -14,14 +14,16 @@ from app.models.schemas import DatabaseType, Language, QueryRequest, QueryRespon
 from app.services.query_validation import InvalidQueryOutput, validate_query
 
 _MAX_RESPONSE_BYTES = 256 * 1024
+_MAX_OUTPUT_TOKENS = 500
+_OPENAI_MAX_COMPLETION_TOKENS = 1000
 _EXPLANATION_MARKER = "---EXPLANATION---"
 _DESCRIPTION_FIELD = "text"
 _SCHEMA_CONTEXT_FIELD = "schema_context"
-_EXPLANATION_LINE = re.compile(rf"^[ \t]*{_EXPLANATION_MARKER}[ \t]*$", re.MULTILINE)
-_FENCED_QUERY = re.compile(
-    r"\A```[^\n]*\n(?P<query>.*?)\n```[ \t]*(?:\n|$)(?P<explanation>.*)\Z",
-    re.DOTALL,
+_EXPLANATION_LINE = re.compile(
+    r"^[ \t]*---[ \t]*(?:\n[ \t]*)?EXPLANATION[ \t]*---[ \t]*$",
+    re.IGNORECASE | re.MULTILINE,
 )
+_FENCE_LINE = re.compile(r"^[ \t]*```[^\n]*$", re.MULTILINE)
 _DIALECT_NAMES = {
     DatabaseType.POSTGRESQL: "PostgreSQL SQL",
     DatabaseType.MYSQL: "MySQL SQL",
@@ -98,7 +100,7 @@ def _is_completion(value: object) -> TypeGuard[_CompletionPayload]:
 
 
 class AIService:
-    """Generate a query using Bytez or a deterministic offline example.
+    """Generate a query using the selected provider or a local demo example.
 
     The application owns the injected HTTP client and its connection pool.
     """
@@ -110,22 +112,24 @@ class AIService:
     @property
     def model(self) -> str:
         """Return the model identifier advertised by the service."""
-        return self._settings.MODEL_NAME
+        return self._settings.model_name
 
     async def generate(self, request: QueryRequest) -> QueryResponse:
         """Generate query text and an explanation for a validated request.
 
         Raises:
-            ProviderError: Bytez could not produce a valid completion.
-            ProviderTimeoutError: Bytez exceeded the configured deadline.
-            ProviderUnavailableError: Live generation lacks a provider credential.
+            ProviderError: The provider could not produce a valid completion.
+            ProviderTimeoutError: The provider exceeded the configured deadline.
+            ProviderUnavailableError: The selected provider requires a missing credential.
         """
         started_at = perf_counter()
         if self._settings.offline:
             return _offline_response(request, self.model, started_at)
+        provider = self._settings.GENERATION_PROVIDER
         key = self._settings.live_key
-        if key is None:
-            raise ProviderUnavailableError("Live generation requires a Bytez credential")
+        if provider != "ollama" and key is None:
+            raise ProviderUnavailableError("The selected provider requires a credential")
+        token = key.get_secret_value() if key is not None and provider != "ollama" else None
 
         user_message = request.text
         if request.schema_context is not None:
@@ -139,19 +143,23 @@ class AIService:
                 {"role": "system", "content": _system_prompt(request)},
                 {"role": "user", "content": user_message},
             ],
-            "max_tokens": 500,
-            "temperature": 0.1,
-            "top_p": 0.95,
         }
-        completion = await self._post_json(payload, key.get_secret_value(), _is_completion)
+        if provider == "openai":
+            payload["max_completion_tokens"] = _OPENAI_MAX_COMPLETION_TOKENS
+        else:
+            payload.update(max_tokens=_MAX_OUTPUT_TOKENS, temperature=0.1, top_p=0.95)
+
+        completion = await self._post_json(payload, token, _is_completion)
         choice = completion["choices"][0]
         if choice.get("finish_reason") not in (None, "stop"):
-            raise ProviderResponseError("Bytez did not finish the text completion")
+            raise ProviderResponseError("Provider did not finish the text completion")
         query, explanation = _parse_completion(choice["message"]["content"], request.language)
         try:
             await asyncio.to_thread(validate_query, query, request.db_type)
         except InvalidQueryOutput as exc:
-            raise ProviderResponseError("Bytez returned an invalid query for the dialect") from exc
+            raise ProviderResponseError(
+                "Provider returned an invalid query for the dialect"
+            ) from exc
         usage = completion.get("usage")
         return QueryResponse(
             query=query,
@@ -160,48 +168,49 @@ class AIService:
             tokens_used=usage["total_tokens"] if usage is not None else 0,
             model=self.model,
             source="live",
+            provider=provider,
         )
 
     async def _post_json[T](
         self,
         payload: dict[str, object],
-        token: str,
+        token: str | None,
         is_valid: Callable[[object], TypeGuard[T]],
     ) -> T:
+        headers = {"Accept": "application/json", "Accept-Encoding": "identity"}
+        if token is not None:
+            headers["Authorization"] = f"Bearer {token}"
         body = bytearray()
         try:
             async with (
                 asyncio.timeout(self._settings.API_TIMEOUT),
                 self._client.stream(
                     "POST",
-                    f"{self._settings.BYTEZ_API_URL}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {token}",
-                        "Accept": "application/json",
-                        "Accept-Encoding": "identity",
-                    },
+                    f"{self._settings.provider_url}/chat/completions",
+                    headers=headers,
                     json=payload,
+                    auth=None,
                     follow_redirects=False,
                 ) as response,
             ):
                 response.raise_for_status()
                 if response.headers.get("Content-Encoding", "identity").lower() != "identity":
-                    raise ProviderResponseError("Bytez returned an unsupported content encoding")
+                    raise ProviderResponseError("Provider returned an unsupported content encoding")
                 async for chunk in response.aiter_bytes(chunk_size=16 * 1024):
                     if len(body) + len(chunk) > _MAX_RESPONSE_BYTES:
-                        raise ProviderResponseError("Bytez response exceeds the size limit")
+                        raise ProviderResponseError("Provider response exceeds the size limit")
                     body.extend(chunk)
         except (TimeoutError, httpx.TimeoutException) as exc:
-            raise ProviderTimeoutError("Bytez response deadline exceeded") from exc
+            raise ProviderTimeoutError("Provider response deadline exceeded") from exc
         except httpx.HTTPError as exc:
-            raise ProviderError("Bytez request failed") from exc
+            raise ProviderError("Provider request failed") from exc
 
         try:
             decoded: object = json.loads(body)
         except (ValueError, RecursionError) as exc:
-            raise ProviderResponseError("Bytez returned invalid JSON") from exc
+            raise ProviderResponseError("Provider returned invalid JSON") from exc
         if not is_valid(decoded):
-            raise ProviderResponseError("Bytez returned an invalid completion")
+            raise ProviderResponseError("Provider returned an invalid completion")
         return decoded
 
 
@@ -247,14 +256,18 @@ def _parse_completion(content: str, language: Language) -> tuple[str, str]:
     try:
         content.encode()
     except UnicodeEncodeError as exc:
-        raise ProviderResponseError("Bytez returned invalid text encoding") from exc
+        raise ProviderResponseError("Provider returned invalid text encoding") from exc
     text = content.strip().replace("\r\n", "\n")
-    if text.startswith("```"):
-        match = _FENCED_QUERY.fullmatch(text)
-        if match is None:
-            raise ProviderResponseError("Bytez returned an incomplete query block")
-        query = match["query"]
-        explanation = match["explanation"].lstrip().removeprefix(_EXPLANATION_MARKER)
+    fences = list(_FENCE_LINE.finditer(text))
+    if fences:
+        if len(fences) != 2 or fences[1][0].strip() != "```":
+            raise ProviderResponseError("Provider returned ambiguous or incomplete query blocks")
+        opening, closing = fences
+        query = text[opening.end() : closing.start()]
+        explanation = text[closing.end() :].lstrip()
+        marker = _EXPLANATION_LINE.match(explanation)
+        if marker is not None:
+            explanation = explanation[marker.end() :]
     else:
         marker = _EXPLANATION_LINE.search(text)
         if marker is not None:
@@ -268,7 +281,7 @@ def _parse_completion(content: str, language: Language) -> tuple[str, str]:
 
     query = query.strip()
     if not query:
-        raise ProviderResponseError("Bytez returned an empty query")
+        raise ProviderResponseError("Provider returned an empty query")
     fallback = "Сгенерированный запрос" if language == "ru" else "Generated query"
     return query, explanation.strip() or fallback
 
@@ -347,4 +360,5 @@ def _offline_response(request: QueryRequest, model: str, started_at: float) -> Q
         tokens_used=150,
         model=f"{model} (тестовый режим)",
         source="demo",
+        provider=None,
     )

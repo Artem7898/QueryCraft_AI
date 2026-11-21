@@ -48,6 +48,7 @@ def create_app(
             timeout=httpx.Timeout(config.API_TIMEOUT),
             limits=limits,
             transport=transport,
+            trust_env=not (config.GENERATION_PROVIDER == "ollama" and config.provider_is_loopback),
         ) as client:
             yield {
                 "runtime": Runtime(

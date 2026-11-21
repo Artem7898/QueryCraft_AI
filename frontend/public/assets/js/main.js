@@ -13,6 +13,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Базовый URL API
   const API_BASE_URL = 'http://localhost:8000/api/v1';
+  const providerNames = new Map([
+    ['bytez', 'Bytez'],
+    ['openai', 'OpenAI'],
+    ['ollama', 'Ollama']
+  ]);
 
   // Проверяем соединение при загрузке
   checkBackendConnection();
@@ -202,9 +207,11 @@ document.addEventListener('DOMContentLoaded', function() {
       // Отображаем результат
       highlightSQL(result.query);
       document.getElementById('explanation').textContent = result.explanation;
+      const providerName = result.source === 'live' ? providerNames.get(result.provider) : undefined;
+      const model = providerName ? `${result.model} (${providerName})` : result.model;
       document.getElementById('executionTime').textContent = currentLang === 'ru'
-        ? `Время: ${result.executed_in} сек. | Модель: ${result.model}`
-        : `Time: ${result.executed_in} sec. | Model: ${result.model}`;
+        ? `Время: ${result.executed_in} сек. | Модель: ${model}`
+        : `Time: ${result.executed_in} sec. | Model: ${model}`;
 
       liveResultSource.classList.toggle('hidden', result.source !== 'live');
       demoResultSource.classList.toggle('hidden', result.source !== 'demo');

@@ -87,6 +87,7 @@ test('submits the description and displays generated SQL as exact highlighted te
   expect(source).not.toHaveClass('hidden');
   expect(source).toHaveTextContent('Сгенерировано моделью');
   expect(document.getElementById('demoResultSource')).toHaveClass('hidden');
+  expect(document.getElementById('executionTime').textContent).toBe('Время: 0.1 сек. | Модель: test');
   expect(output.querySelector('note')).toBeNull();
   expect(output.querySelector('.font-semibold')).toHaveTextContent('select');
   expect(output.querySelector('.text-blue-600')).toHaveTextContent('12');
@@ -139,6 +140,28 @@ test('sends the schema context, selected options and genuine description', async
   });
 });
 
+test.each([
+  ['bytez', ' (Bytez)'],
+  ['openai', ' (OpenAI)'],
+  ['ollama', ' (Ollama)'],
+  ['unknown', '']
+])('displays live generation metadata for the %s provider', async (provider, label) => {
+  document.getElementById('langBtn').click();
+  fetchMock.mockResponseOnce(JSON.stringify({
+    query: 'SELECT name FROM accounts;',
+    explanation: 'Query for the selected schema',
+    executed_in: 0.1,
+    model: 'test',
+    source: 'live',
+    provider
+  }));
+
+  submitQuery('List accounts');
+
+  const metadata = document.getElementById('executionTime');
+  await waitFor(() => expect(metadata.textContent).toBe(`Time: 0.1 sec. | Model: test${label}`));
+});
+
 test('rejects a schema value longer than the input limit before sending', () => {
   const input = document.getElementById('schemaContext');
   input.value = 'x'.repeat(input.maxLength + 1);
@@ -154,7 +177,8 @@ test('identifies a demo template in both languages without calling it model-gene
     explanation: 'Fixed example',
     executed_in: 0,
     model: 'test',
-    source: 'demo'
+    source: 'demo',
+    provider: null
   }));
   submitQuery('Show reports');
 
@@ -162,6 +186,7 @@ test('identifies a demo template in both languages without calling it model-gene
   await waitFor(() => expect(source).not.toHaveClass('hidden'));
   expect(source).toHaveTextContent('Демонстрационный шаблон');
   expect(document.getElementById('liveResultSource')).toHaveClass('hidden');
+  expect(document.getElementById('executionTime').textContent).toBe('Время: 0 сек. | Модель: test');
   document.getElementById('langBtn').click();
   expect(source).toHaveTextContent('Demo template');
   expect(document.getElementById('liveResultSource')).toHaveClass('hidden');
@@ -183,12 +208,14 @@ test('handles 503 with localized setup guidance and hides prior results', async 
 
   const alert = document.getElementById('generationUnavailable');
   await waitFor(() => expect(alert).not.toHaveClass('hidden'));
-  expect(alert).toHaveTextContent('Настройте провайдера генерации на сервере');
+  expect(alert).toHaveTextContent('Настройте провайдера на сервере');
+  expect(alert).toHaveTextContent('Для локальной генерации можно использовать Ollama.');
   expect(document.getElementById('result')).toHaveClass('hidden');
   expect(document.body).not.toHaveTextContent('Internal routing details');
   expect(document.querySelector('#queryForm button[type="submit"]')).toBeEnabled();
   document.getElementById('langBtn').click();
-  expect(alert).toHaveTextContent('Configure a generation provider on the server');
+  expect(alert).toHaveTextContent('Configure a provider on the server');
+  expect(alert).toHaveTextContent('Ollama can run generation locally.');
 });
 
 test('shows a network error and re-enables submission', async () => {

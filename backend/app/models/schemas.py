@@ -11,6 +11,7 @@ SCHEMA_CONTEXT_MAX_LENGTH = 3000
 
 type Language = Literal["ru", "en"]
 type GenerationSource = Literal["live", "demo"]
+type GenerationProvider = Literal["bytez", "openai", "ollama"]
 
 
 class DatabaseType(StrEnum):
@@ -90,3 +91,4 @@ class QueryResponse(BaseModel):
     tokens_used: Annotated[int, Field(ge=0, description="Number of tokens used")] | None = None
     model: Annotated[str, Field(min_length=1, description="Model used")]
     source: Annotated[GenerationSource, Field(description="Origin of the generated query")]
+    provider: Annotated[GenerationProvider | None, Field(description="Live provider used")] = None

@@ -13,6 +13,7 @@ def demo_settings() -> Settings:
     return Settings(
         BYTEZ_API_KEY=None,
         GENERATION_MODE="demo",
+        GENERATION_PROVIDER="bytez",
         ENVIRONMENT="development",
         DEBUG=False,
         ALLOWED_ORIGINS=["http://localhost:3000"],

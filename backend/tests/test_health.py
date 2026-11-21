@@ -10,6 +10,6 @@ def test_api_health_endpoint(client: TestClient, demo_settings: Settings) -> Non
     health = response.json()
     assert set(health) == {"status", "model", "service", "timestamp"}
     assert health["status"] == "healthy"
-    assert health["model"] == demo_settings.MODEL_NAME
+    assert health["model"] == demo_settings.model_name
     assert health["service"] == "QueryCraft AI"
     assert isinstance(health["timestamp"], int | float)

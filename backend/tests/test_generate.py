@@ -25,7 +25,9 @@ def provider_settings() -> Settings:
     return Settings(
         BYTEZ_API_KEY=SecretStr("synthetic-test-key"),
         GENERATION_MODE="live",
+        GENERATION_PROVIDER="bytez",
         BYTEZ_API_URL="https://provider.example/v1",
+        MODEL_NAME="test-bytez-model",
         ENVIRONMENT="development",
         DEBUG=False,
         MAX_REQUESTS_PER_MINUTE=60,
@@ -51,6 +53,7 @@ def test_explicit_demo_generation(
     assert data["explanation"]
     assert "тестовый режим" in data["model"]
     assert data["source"] == "demo"
+    assert data["provider"] is None
     assert data["executed_in"] >= 0
 
 
@@ -125,9 +128,10 @@ def test_provider_success_and_transport_lifespan(
             data = response.json()
             assert data["query"] == "SELECT id FROM users;"
             assert data["explanation"] == "List user IDs."
-            assert data["model"] == provider_settings.MODEL_NAME
+            assert data["model"] == provider_settings.model_name
             assert data["tokens_used"] == 42
             assert data["source"] == "live"
+            assert data["provider"] == "bytez"
 
         assert len(observed) == 2
         for request in observed:
@@ -135,7 +139,7 @@ def test_provider_success_and_transport_lifespan(
             assert str(request.url) == "https://provider.example/v1/chat/completions"
             assert request.headers["Authorization"] == "Bearer synthetic-test-key"
             forwarded = json.loads(request.content)
-            assert forwarded["model"] == provider_settings.MODEL_NAME
+            assert forwarded["model"] == provider_settings.model_name
             assert valid_query_request["text"] == forwarded["messages"][-1]["content"]
         assert not transport.closed
 
@@ -152,12 +156,37 @@ def completion(content: str, *, finish_reason: str = "stop") -> httpx.Response:
     )
 
 
-def test_live_generation_without_key_is_unavailable(
-    valid_query_request: dict[str, str],
+def test_ollama_completion_extracts_fenced_query_after_prologue(
+    provider_settings: Settings, valid_query_request: dict[str, str]
+) -> None:
+    settings = provider_settings.model_copy(update={"GENERATION_PROVIDER": "ollama"})
+    query = "SELECT id\nFROM users\nWHERE active = TRUE;"
+    explanation = "Returns the IDs of active users."
+    content = (
+        "Here is the SQL query for the requested result.\n\n"
+        f"```sql\n{query}\n```\n\n"
+        f"---\nEXPLANATION---\n{explanation}"
+    )
+    transport = httpx.MockTransport(lambda _: completion(content))
+    with TestClient(create_app(settings, transport=transport)) as test_client:
+        response = test_client.post("/api/v1/generate", json=valid_query_request)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["provider"] == "ollama"
+    assert data["query"] == query
+    assert data["explanation"] == explanation
+
+
+@pytest.mark.parametrize("provider", ["bytez", "openai"])
+def test_live_generation_without_selected_key_is_unavailable(
+    provider: str, valid_query_request: dict[str, str]
 ) -> None:
     settings = Settings(
-        BYTEZ_API_KEY=None,
+        BYTEZ_API_KEY=None if provider == "bytez" else SecretStr("synthetic-bytez-key"),
+        OPENAI_API_KEY=None if provider == "openai" else SecretStr("synthetic-openai-key"),
         GENERATION_MODE="live",
+        GENERATION_PROVIDER=provider,
         ENVIRONMENT="development",
         DEBUG=False,
         _env_file=None,
@@ -171,7 +200,48 @@ def test_live_generation_without_key_is_unavailable(
     assert response.json() == {"detail": "Generation provider is not configured"}
 
 
-def test_live_generation_uses_description_and_schema_context(provider_settings: Settings) -> None:
+@pytest.mark.parametrize(
+    ("provider", "url", "authorization", "model", "token_field"),
+    [
+        (
+            "bytez",
+            "https://provider.example/v1/chat/completions",
+            "Bearer synthetic-bytez-key",
+            "Qwen/Qwen2-7B-Instruct",
+            "max_tokens",
+        ),
+        (
+            "openai",
+            "https://api.openai.com/v1/chat/completions",
+            "Bearer synthetic-openai-key",
+            "gpt-4.1-mini",
+            "max_completion_tokens",
+        ),
+        (
+            "ollama",
+            "http://127.0.0.1:11434/v1/chat/completions",
+            None,
+            "qwen2.5-coder:1.5b",
+            "max_tokens",
+        ),
+    ],
+)
+def test_live_providers_route_description_and_schema_context(
+    provider: str, url: str, authorization: str | None, model: str, token_field: str
+) -> None:
+    settings = Settings(
+        GENERATION_MODE="live",
+        GENERATION_PROVIDER=provider,
+        BYTEZ_API_KEY=SecretStr("synthetic-bytez-key"),
+        BYTEZ_API_URL="https://provider.example/v1",
+        OPENAI_API_KEY=SecretStr("synthetic-openai-key"),
+        OLLAMA_API_URL="http://127.0.0.1:11434/v1",
+        MODEL_NAME=None,
+        ENVIRONMENT="development",
+        DEBUG=False,
+        MAX_REQUESTS_PER_MINUTE=60,
+        _env_file=None,
+    )
     schema = "customers(customer_id INTEGER, preferred BOOLEAN, loyalty_points INTEGER)"
     cases = {
         "List preferred customers": (
@@ -186,7 +256,15 @@ def test_live_generation_uses_description_and_schema_context(provider_settings: 
     observed: list[str] = []
 
     def respond(request: httpx.Request) -> httpx.Response:
-        messages = json.loads(request.content)["messages"]
+        assert str(request.url) == url
+        assert request.headers.get("Authorization") == authorization
+        payload = json.loads(request.content)
+        assert payload["model"] == model
+        assert isinstance(payload[token_field], int) and payload[token_field] > 0
+        assert {"max_tokens", "max_completion_tokens"} & payload.keys() == {token_field}
+        assert "synthetic-bytez-key" not in request.content.decode("utf-8")
+        assert "synthetic-openai-key" not in request.content.decode("utf-8")
+        messages = payload["messages"]
         assert messages[0]["role"] == "system"
         assert messages[-1]["role"] == "user"
         user_message = json.loads(messages[-1]["content"])
@@ -197,7 +275,7 @@ def test_live_generation_uses_description_and_schema_context(provider_settings: 
         return completion(f"{query}\n---EXPLANATION---\n{explanation}")
 
     transport = httpx.MockTransport(respond)
-    with TestClient(create_app(provider_settings, transport=transport)) as test_client:
+    with TestClient(create_app(settings, transport=transport)) as test_client:
         for description, (query, explanation) in cases.items():
             response = test_client.post(
                 "/api/v1/generate",
@@ -210,6 +288,8 @@ def test_live_generation_uses_description_and_schema_context(provider_settings: 
             )
             assert response.status_code == 200
             assert response.json()["source"] == "live"
+            assert response.json()["provider"] == provider
+            assert response.json()["model"] == model
             assert response.json()["query"] == query
             assert response.json()["explanation"] == explanation
 
@@ -251,6 +331,11 @@ def test_live_generation_accepts_target_dialect(
         ("postgresql", "I could not find matching records.", "stop"),
         ("postgresql", "SELECT FROM;", "stop"),
         ("postgresql", "SELECT 1; SELECT 2;", "stop"),
+        (
+            "postgresql",
+            "```sql\nSELECT 1;\n```\n\nAlternatively:\n\n```sql\nSELECT 2;\n```",
+            "stop",
+        ),
         ("postgresql", "SELECT `id` FROM `customers`;", "stop"),
         ("postgresql", "SELECT id FROM customers;", "length"),
         ("mysql", "SELECT id FROM customers WHERE name ILIKE 'A%';", "stop"),

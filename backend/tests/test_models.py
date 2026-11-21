@@ -46,6 +46,7 @@ def test_query_response_preserves_wire_types() -> None:
         model="test-model",
         executed_in=1.5,
         source="live",
+        provider="openai",
     )
 
     assert response.model_dump(mode="json") == {
@@ -55,6 +56,7 @@ def test_query_response_preserves_wire_types() -> None:
         "executed_in": 1.5,
         "tokens_used": None,
         "source": "live",
+        "provider": "openai",
     }
 
 
