@@ -4,6 +4,8 @@
 
 QueryCraft AI turns natural-language descriptions in English or Russian into draft queries for PostgreSQL, MySQL, SQLite, and MongoDB. The API returns the query text, an explanation, and generation metadata. It does not connect to a database or execute queries. Review each draft against your schema and requirements before using it.
 
+[Project guide](Docs/README.md) · [Technical guide](Docs/technical.md)
+
 ## Architecture
 
 ```mermaid
@@ -109,7 +111,7 @@ The application reads environment variables and a `.env` file in the server’s 
 
 To enable live generation, configure your Bytez key in the environment or in your local `.env` file and remove `BYTEZ_API_KEY=your_api_key_here` from the startup command. Live mode sends query descriptions to Bytez. Keep the API key out of version control.
 
-For a hosted deployment, set `API_BASE_URL` to an API address reachable by the browser and include the frontend origin in `ALLOWED_ORIGINS`. If you run multiple workers, enforce a shared rate limit and access control at the gateway. [Frontend API configuration](frontend/public/assets/js/main.js)
+For a hosted deployment, configure the frontend to use an API address reachable by the browser and include the frontend origin in `ALLOWED_ORIGINS`. If you run multiple workers, enforce a shared rate limit and access control at the gateway. [Technical guide](Docs/technical.md)
 
 ## Development checks
 
