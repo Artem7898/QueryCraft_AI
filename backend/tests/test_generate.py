@@ -24,6 +24,7 @@ class TrackingTransport(httpx.MockTransport):
 def provider_settings() -> Settings:
     return Settings(
         BYTEZ_API_KEY=SecretStr("synthetic-test-key"),
+        GENERATION_MODE="live",
         BYTEZ_API_URL="https://provider.example/v1",
         ENVIRONMENT="development",
         DEBUG=False,
@@ -32,14 +33,24 @@ def provider_settings() -> Settings:
     )
 
 
-def test_offline_generation(client: TestClient, valid_query_request: dict[str, str]) -> None:
-    response = client.post("/api/v1/generate", json=valid_query_request)
+def reject_unexpected_provider_request(_request: httpx.Request) -> httpx.Response:
+    raise AssertionError("This configuration must prevent outbound generation requests")
+
+
+def test_explicit_demo_generation(
+    demo_settings: Settings, valid_query_request: dict[str, str]
+) -> None:
+    settings = demo_settings.model_copy(update={"BYTEZ_API_KEY": SecretStr("synthetic-test-key")})
+    transport = httpx.MockTransport(reject_unexpected_provider_request)
+    with TestClient(create_app(settings, transport=transport)) as test_client:
+        response = test_client.post("/api/v1/generate", json=valid_query_request)
 
     assert response.status_code == 200
     data = response.json()
     assert "FROM users" in data["query"]
     assert data["explanation"]
     assert "тестовый режим" in data["model"]
+    assert data["source"] == "demo"
     assert data["executed_in"] >= 0
 
 
@@ -58,6 +69,7 @@ def test_supported_generation_options(client: TestClient, db_type: str, language
 
     assert response.status_code == 200
     assert response.json()["query"]
+    assert response.json()["source"] == "demo"
 
 
 @pytest.mark.parametrize(
@@ -71,6 +83,8 @@ def test_supported_generation_options(client: TestClient, db_type: str, language
         {"text": "Show users", "complexity": "unsupported"},
         {"text": "Show users", "language": "unsupported"},
         {"text": "Show users", "unexpected": True},
+        {"text": "Show users", "schema_context": 123},
+        {"text": "Show users", "schema_context": "x" * 3001},
     ],
 )
 def test_invalid_requests_are_rejected(client: TestClient, payload: dict[str, object]) -> None:
@@ -78,9 +92,9 @@ def test_invalid_requests_are_rejected(client: TestClient, payload: dict[str, ob
 
 
 def test_configured_prompt_limit_does_not_echo_text(
-    offline_settings: Settings, valid_query_request: dict[str, str]
+    demo_settings: Settings, valid_query_request: dict[str, str]
 ) -> None:
-    settings = offline_settings.model_copy(update={"MAX_QUERY_LENGTH": 10})
+    settings = demo_settings.model_copy(update={"MAX_QUERY_LENGTH": 10})
     with TestClient(create_app(settings)) as test_client:
         assert (
             test_client.post(
@@ -101,13 +115,7 @@ def test_provider_success_and_transport_lifespan(
 
     def respond(request: httpx.Request) -> httpx.Response:
         observed.append(request)
-        return httpx.Response(
-            200,
-            json={
-                "choices": [{"message": {"content": "SELECT id FROM users;\n\nList user IDs."}}],
-                "usage": {"total_tokens": 42},
-            },
-        )
+        return completion("SELECT id FROM users;\n\nList user IDs.")
 
     transport = TrackingTransport(respond)
     with TestClient(create_app(provider_settings, transport=transport)) as test_client:
@@ -119,6 +127,7 @@ def test_provider_success_and_transport_lifespan(
             assert data["explanation"] == "List user IDs."
             assert data["model"] == provider_settings.MODEL_NAME
             assert data["tokens_used"] == 42
+            assert data["source"] == "live"
 
         assert len(observed) == 2
         for request in observed:
@@ -127,10 +136,142 @@ def test_provider_success_and_transport_lifespan(
             assert request.headers["Authorization"] == "Bearer synthetic-test-key"
             forwarded = json.loads(request.content)
             assert forwarded["model"] == provider_settings.MODEL_NAME
-            assert valid_query_request["text"] in forwarded["messages"][-1]["content"]
+            assert valid_query_request["text"] == forwarded["messages"][-1]["content"]
         assert not transport.closed
 
     assert transport.closed
+
+
+def completion(content: str, *, finish_reason: str = "stop") -> httpx.Response:
+    return httpx.Response(
+        200,
+        json={
+            "choices": [{"message": {"content": content}, "finish_reason": finish_reason}],
+            "usage": {"total_tokens": 42},
+        },
+    )
+
+
+def test_live_generation_without_key_is_unavailable(
+    valid_query_request: dict[str, str],
+) -> None:
+    settings = Settings(
+        BYTEZ_API_KEY=None,
+        GENERATION_MODE="live",
+        ENVIRONMENT="development",
+        DEBUG=False,
+        _env_file=None,
+    )
+
+    transport = httpx.MockTransport(reject_unexpected_provider_request)
+    with TestClient(create_app(settings, transport=transport)) as test_client:
+        response = test_client.post("/api/v1/generate", json=valid_query_request)
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Generation provider is not configured"}
+
+
+def test_live_generation_uses_description_and_schema_context(provider_settings: Settings) -> None:
+    schema = "customers(customer_id INTEGER, preferred BOOLEAN, loyalty_points INTEGER)"
+    cases = {
+        "List preferred customers": (
+            "SELECT customer_id FROM customers WHERE preferred IS TRUE;",
+            "Filter by preferred status.",
+        ),
+        "List customers with more than 200 loyalty points": (
+            "SELECT customer_id FROM customers WHERE loyalty_points > 200;",
+            "Filter by loyalty points.",
+        ),
+    }
+    observed: list[str] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        messages = json.loads(request.content)["messages"]
+        assert messages[0]["role"] == "system"
+        assert messages[-1]["role"] == "user"
+        user_message = json.loads(messages[-1]["content"])
+        assert user_message["schema_context"] == schema
+        description = user_message["text"]
+        observed.append(description)
+        query, explanation = cases[description]
+        return completion(f"{query}\n---EXPLANATION---\n{explanation}")
+
+    transport = httpx.MockTransport(respond)
+    with TestClient(create_app(provider_settings, transport=transport)) as test_client:
+        for description, (query, explanation) in cases.items():
+            response = test_client.post(
+                "/api/v1/generate",
+                json={
+                    "text": description,
+                    "db_type": "postgresql",
+                    "language": "en",
+                    "schema_context": f"  {schema}  ",
+                },
+            )
+            assert response.status_code == 200
+            assert response.json()["source"] == "live"
+            assert response.json()["query"] == query
+            assert response.json()["explanation"] == explanation
+
+    assert observed == list(cases)
+
+
+@pytest.mark.parametrize(
+    ("db_type", "query"),
+    [
+        (
+            "postgresql",
+            "SELECT DISTINCT ON (customer_id) customer_id FROM customers ORDER BY customer_id;",
+        ),
+        ("mysql", "SELECT `name` FROM `customers` WHERE `score` > 10 LIMIT 3;"),
+        ("sqlite", "SELECT date(created_at, '-7 days') FROM events WHERE processed = 1;"),
+        ("mongodb", "db.orders.find({status: 'open'}).sort({created_at: -1}).limit(3)"),
+        ("postgresql", "UPDATE customers SET preferred = TRUE WHERE customer_id = 7;"),
+        ("sqlite", "CREATE TABLE purchase_reports (id INTEGER PRIMARY KEY, total NUMERIC);"),
+    ],
+)
+def test_live_generation_accepts_target_dialect(
+    provider_settings: Settings, db_type: str, query: str
+) -> None:
+    transport = httpx.MockTransport(lambda _: completion(query))
+    with TestClient(create_app(provider_settings, transport=transport)) as test_client:
+        response = test_client.post(
+            "/api/v1/generate",
+            json={"text": "Show records meeting the selected condition", "db_type": db_type},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["query"] == query
+    assert response.json()["source"] == "live"
+
+
+@pytest.mark.parametrize(
+    ("db_type", "content", "finish_reason"),
+    [
+        ("postgresql", "I could not find matching records.", "stop"),
+        ("postgresql", "SELECT FROM;", "stop"),
+        ("postgresql", "SELECT 1; SELECT 2;", "stop"),
+        ("postgresql", "SELECT `id` FROM `customers`;", "stop"),
+        ("postgresql", "SELECT id FROM customers;", "length"),
+        ("mysql", "SELECT id FROM customers WHERE name ILIKE 'A%';", "stop"),
+        ("sqlite", "SELECT id::TEXT FROM customers;", "stop"),
+        ("mongodb", "SELECT id FROM customers;", "stop"),
+        ("mongodb", "db.customers.find({active: true}", "stop"),
+        ("sqlite", "db.customers.find({active: true})", "stop"),
+    ],
+)
+def test_live_generation_rejects_invalid_provider_queries(
+    provider_settings: Settings, db_type: str, content: str, finish_reason: str
+) -> None:
+    transport = httpx.MockTransport(lambda _: completion(content, finish_reason=finish_reason))
+    with TestClient(create_app(provider_settings, transport=transport)) as test_client:
+        response = test_client.post(
+            "/api/v1/generate",
+            json={"text": "Show matching customers", "db_type": db_type},
+        )
+
+    assert response.status_code == 502
+    assert response.json() == {"detail": "Generation provider failed"}
 
 
 @pytest.mark.parametrize(

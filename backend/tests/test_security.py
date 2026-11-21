@@ -1,3 +1,4 @@
+import json
 import logging
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
@@ -5,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from fastapi.testclient import TestClient
 
+from app.api.v1.endpoints.query import MAX_GENERATION_BODY_BYTES
 from app.config import Settings
 from app.main import create_app
 
@@ -44,9 +46,9 @@ def test_bare_options_has_no_cors_wildcard(client: TestClient) -> None:
 
 
 def test_rate_limit_is_atomic_and_resets_with_lifespan(
-    offline_settings: Settings, valid_query_request: dict[str, str]
+    demo_settings: Settings, valid_query_request: dict[str, str]
 ) -> None:
-    settings = offline_settings.model_copy(update={"MAX_REQUESTS_PER_MINUTE": 2})
+    settings = demo_settings.model_copy(update={"MAX_REQUESTS_PER_MINUTE": 2})
     app = create_app(settings)
 
     with TestClient(app) as test_client, ThreadPoolExecutor(max_workers=4) as pool:
@@ -67,7 +69,7 @@ def test_rate_limit_is_atomic_and_resets_with_lifespan(
 
 
 def test_oversized_body_is_rejected(client: TestClient) -> None:
-    response = client.post("/api/v1/generate", json={"text": "x" * (17 * 1024)})
+    response = client.post("/api/v1/generate", json={"text": "x" * MAX_GENERATION_BODY_BYTES})
 
     assert response.status_code == 413
 
@@ -75,8 +77,8 @@ def test_oversized_body_is_rejected(client: TestClient) -> None:
 def test_oversized_streamed_body_is_rejected(client: TestClient) -> None:
     def chunks() -> Iterator[bytes]:
         yield b'{"text":"'
-        yield b"x" * (9 * 1024)
-        yield b"x" * (8 * 1024)
+        yield b"x" * (MAX_GENERATION_BODY_BYTES // 2)
+        yield b"x" * (MAX_GENERATION_BODY_BYTES // 2)
         yield b'"}'
 
     response = client.post(
@@ -87,6 +89,18 @@ def test_oversized_streamed_body_is_rejected(client: TestClient) -> None:
 
     assert "content-length" not in response.request.headers
     assert response.status_code == 413
+
+
+def test_byte_limit_allows_full_unicode_prompt_and_schema(client: TestClient) -> None:
+    payload = {"text": "🌿" * 1000, "schema_context": "🌿" * 3000}
+    response = client.post(
+        "/api/v1/generate",
+        content=json.dumps(payload, ensure_ascii=True),
+        headers={"Content-Type": "application/json"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["source"] == "demo"
 
 
 def test_validation_and_logs_omit_request_content_and_headers(

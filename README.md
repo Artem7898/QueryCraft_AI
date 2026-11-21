@@ -16,7 +16,7 @@ flowchart LR
 ```
 
 - **API** validates requests with Pydantic v2 and enforces request size and rate limits. Each FastAPI worker owns an asynchronous HTTPX client and connection pool.
-- **Generation** uses Bytez with `Qwen/Qwen2-7B-Instruct` as the default model. Demo mode returns predefined examples for the selected database dialect.
+- **Generation** sends the description and optional schema context to Bytez, then checks the returned syntax for the selected dialect. An explicit demo mode returns predefined examples.
 - **Web interface** uses HTML, CSS, and JavaScript and runs without a build step. Syntax highlighting renders provider output as text in the DOM.
 
 ## Run locally
@@ -29,12 +29,14 @@ source .venv/bin/activate
 python -m pip install -r backend/requirements-dev.txt
 ```
 
-Start the API from `backend/`. This command explicitly enables demo mode and requires no Bytez key.
+Configure `BYTEZ_API_KEY` in your environment or in `backend/.env`, then start the API from `backend/`. The default mode generates queries through Bytez.
 
 ```bash
 cd backend
-BYTEZ_API_KEY=your_api_key_here python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
+
+To try the interface without a key, prefix the command with `GENERATION_MODE=demo`. The interface labels those results as examples.
 
 In a second terminal, start the static server from the repository root.
 
@@ -60,7 +62,7 @@ Open `http://localhost:3000`. The browser sends requests to `http://localhost:80
 ```bash
 curl --fail-with-body --silent --show-error http://127.0.0.1:8000/api/v1/generate \
   -H 'Content-Type: application/json' \
-  --data '{"text":"Show active users older than 25","db_type":"postgresql","complexity":"simple","language":"en"}'
+  --data '{"text":"Show active users older than 25","db_type":"postgresql","complexity":"simple","language":"en","schema_context":"users(id, username, email, age, status, created_at)"}'
 ```
 
 | Field | Accepted values | Default |
@@ -69,6 +71,7 @@ curl --fail-with-body --silent --show-error http://127.0.0.1:8000/api/v1/generat
 | `db_type` | `postgresql`, `mysql`, `sqlite`, `mongodb` | `postgresql` |
 | `complexity` | `simple`, `medium`, `advanced` | `medium` |
 | `language` | `ru`, `en` | `ru` |
+| `schema_context` | Optional schema description with table or collection names, fields, and relationships, up to 3000 characters | Omitted |
 
 Example response in demo mode.
 
@@ -78,18 +81,20 @@ Example response in demo mode.
   "explanation": "Selects active users older than 25",
   "executed_in": 0.0,
   "tokens_used": 150,
-  "model": "Qwen/Qwen2-7B-Instruct (тестовый режим)"
+  "model": "Qwen/Qwen2-7B-Instruct (тестовый режим)",
+  "source": "demo"
 }
 ```
 
-`executed_in` is measured in seconds. In demo mode, `tokens_used` is a placeholder value and the model name includes the suffix `(тестовый режим)`, meaning “demo mode.”
+`executed_in` is measured in seconds. The `source` field is `live` for a generated query or `demo` for a predefined example. In demo mode, `tokens_used` is a placeholder value.
 
 | Status | Meaning |
 | --- | --- |
-| `413` | Request body exceeds 16 KiB |
+| `413` | Request body exceeds 64 KiB |
 | `422` | Invalid JSON or request fields |
 | `429` | Generation rate limit reached. See the `Retry-After` header |
-| `502` | Provider failure or unexpected response format |
+| `502` | Provider failure, invalid response format, or output the dialect parser rejected |
+| `503` | Live generation is selected and the Bytez key is missing |
 | `504` | Provider request timed out |
 
 ## Configuration
@@ -98,18 +103,19 @@ The application reads environment variables and a `.env` file in the server’s 
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `BYTEZ_API_KEY` | Unset | API key for live generation. An empty value or `your_api_key_here` enables demo mode |
+| `GENERATION_MODE` | `live` | Use `demo` to return predefined examples in development |
+| `BYTEZ_API_KEY` | Unset | API key required for live generation. The legacy value `your_api_key_here` explicitly selects demo mode |
 | `BYTEZ_API_URL` | `https://api.bytez.com/models/v2/openai/v1` | Provider HTTPS base URL |
 | `MODEL_NAME` | `Qwen/Qwen2-7B-Instruct` | Provider model identifier |
 | `API_TIMEOUT` | `30` | Total Bytez request timeout in seconds, from 5 to 120 |
 | `ALLOWED_ORIGINS` | Local origins on ports 3000 and 8000 | Allowed CORS origins as a JSON array or comma-separated list |
 | `MAX_QUERY_LENGTH` | `1000` | Maximum description length, from 3 to 1000 characters |
 | `MAX_REQUESTS_PER_MINUTE` | `60` | Shared generation request limit per minute, per worker |
-| `ENVIRONMENT` | `development` | The `production` setting requires a Bytez key and `DEBUG=false` |
+| `ENVIRONMENT` | `development` | Production requires live mode, a Bytez key, and `DEBUG=false` |
 | `DEBUG` | `false` | Development configuration flag |
 | `APP_NAME` | `QueryCraft AI` | Application name shown in the API documentation title |
 
-To enable live generation, configure your Bytez key in the environment or in your local `.env` file and remove `BYTEZ_API_KEY=your_api_key_here` from the startup command. Live mode sends query descriptions to Bytez. Keep the API key out of version control.
+Live mode sends query descriptions and any supplied schema context to Bytez. Keep the API key out of version control. Use table and field definitions as context and leave credentials and personal records out of prompts.
 
 For a hosted deployment, configure the frontend to use an API address reachable by the browser and include the frontend origin in `ALLOWED_ORIGINS`. If you run multiple workers, enforce a shared rate limit and access control at the gateway. [Technical guide](Docs/technical.md)
 

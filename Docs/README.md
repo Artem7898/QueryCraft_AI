@@ -23,16 +23,16 @@ The form offers **Simple**, **Medium**, and **Advanced** complexity. In live mod
 
 | Mode | How it works | Use it for |
 | --- | --- | --- |
-| Demo | The API selects from built-in examples, including users, orders, and a generic query. It uses no external model call. | Trying the interface, checking the API locally, and developing without a Bytez key. |
-| Live | The API sends the description and generation instructions to Bytez and returns the model’s draft. | Working with your own descriptions and requesting more specific queries. |
+| Live (default) | The API sends your description, optional schema, and generation instructions to Bytez, then checks the returned syntax for the selected dialect. | Working with your own descriptions and requesting more specific queries. Requires a Bytez key on the server. |
+| Demo (opt-in) | The API selects from built-in examples, including users, orders, and a generic query. It uses no external model call. | Trying the interface and checking the API locally without a Bytez key. |
 
-The demo returns templates for the selected dialect. For example, a prompt about users returns a built-in users query even if you ask for a different age threshold or ordering. A model identifier ending in `(тестовый режим)` marks a demo result.
+The demo returns templates for the selected dialect. For example, a prompt about users returns a built-in users query even if you ask for a different age threshold or ordering. The interface labels templates as demo examples. If the key is missing in live mode, the API reports that generation is unavailable.
 
 [Start the local demo](../README.md#run-locally) · [Configure live generation](../README.md#configuration)
 
 ## From a question to a draft
 
-1. Open the query form and describe the result you need. Include relevant table or collection names, columns or fields, known relationships, filters, grouping, and ordering.
+1. Open the query form and describe the result you need, including filters, grouping, and ordering. In **Database schema**, you can supply up to 3000 characters of table or collection names, columns or fields, relationships, and types.
 2. Select the database dialect and complexity, then generate the draft. The result shows the query, its explanation, generation time, and model.
 3. Compare the draft with your schema and the expected result. Check names, joins, date boundaries, null handling, and SQL or MongoDB syntax as applicable.
 4. Copy the reviewed text into your usual query tool. Try it against representative test data before relying on it in a report or application.
@@ -49,9 +49,9 @@ The examples show how to supply schema context and describe output precisely. Li
 
 ## What to expect from a result
 
-QueryCraft AI generates text. It has no database connection, schema discovery, query execution, or access to query results. It does not verify that a query fits a particular dataset, database version, permissions model, or performance budget. The draft may contain a wrong identifier, unsupported syntax, or a different interpretation of the request.
+The syntax check can reject invalid output before it reaches the form. Verify identifiers, database-version features, permissions, and performance in your own environment. QueryCraft AI works with the schema details you supply in the form, and execution and results stay in your database tools.
 
-In live mode, the description is sent to Bytez. Use schema names and synthetic values where possible, and keep credentials or sensitive records out of prompts. The Bytez key belongs in backend configuration.
+In live mode, the description and schema context are sent to Bytez. Use schema names and synthetic values where possible, and keep credentials or sensitive records out of prompts. The Bytez key belongs in backend configuration.
 
 ## Technical documentation
 

@@ -25,7 +25,9 @@ def main() -> None:
         )
         response.raise_for_status()
         assert response.headers["access-control-allow-origin"] == origin
-        assert "FROM users" in response.json()["query"]
+        result = response.json()
+        assert result["source"] == "demo"
+        assert "FROM users" in result["query"]
         print("CORS and offline generation passed")
 
 
